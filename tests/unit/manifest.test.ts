@@ -24,3 +24,26 @@ describe('manifest (F1-FR1)', () => {
     expect(manifest.icons?.[128]).toBe('icons/icon128.png');
   });
 });
+
+describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
+  it('declares exactly the least-privilege permission set', () => {
+    expect(manifest.permissions).toEqual([
+      'activeTab',
+      'scripting',
+      'contextMenus',
+      'storage',
+      'notifications',
+      'offscreen',
+    ]);
+  });
+
+  it('does NOT request debugger or identity', () => {
+    expect(manifest.permissions).not.toContain('debugger');
+    expect(manifest.permissions).not.toContain('identity');
+  });
+
+  it('does NOT request declarativeNetRequest variants by default', () => {
+    expect(manifest.permissions).not.toContain('declarativeNetRequest');
+    expect(manifest.permissions).not.toContain('declarativeNetRequestWithHostAccess');
+  });
+});

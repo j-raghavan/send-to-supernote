@@ -36,6 +36,11 @@ export const manifest: chrome.runtime.ManifestV3 = {
     48: 'icons/icon48.png',
     128: 'icons/icon128.png',
   },
+
+  // F1-FR2: least-privilege permissions. NO `debugger`, NO `identity`.
+  // `declarativeNetRequestWithHostAccess` is intentionally OMITTED — it is only
+  // added if the F5-FR1 spike proves an S3 PUT header must be rewritten.
+  permissions: ['activeTab', 'scripting', 'contextMenus', 'storage', 'notifications', 'offscreen'],
 };
 
 export default manifest;
