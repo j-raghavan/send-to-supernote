@@ -42,7 +42,7 @@ export async function renderDocument(
   deps: RenderDeps,
   params: RenderParams,
 ): Promise<Result<RenderedBlob, ConversionError>> {
-  const options = resolveRenderOptions(params.format, params.pageSize);
+  const options = resolveRenderOptions(params.format, params.document.mode, params.pageSize);
 
   const html = deps.fetchImage
     ? (await inlineImages(params.document.html, deps.fetchImage)).html
