@@ -30,11 +30,14 @@ function stripComments(source: string): string {
 describe('I-2/D-3 sole-fetch tripwire (pulled forward from F10)', () => {
   it('contains a real fetch( call in exactly one file — the FetchHttpClient adapter', () => {
     const offenders: string[] = [];
+    // Bare `fetch(` (not `.fetch(` / `fetchImage(`) AND the qualified global forms
+    // `globalThis.fetch(` / `window.fetch(` / `self.fetch(` — all confined to the
+    // sole adapter (F10-FR5 residual hardening).
+    const bare = /(?<![\w.])fetch\s*\(/;
+    const qualified = /\b(?:globalThis|window|self)\.fetch\s*\(/;
     for (const file of tsFiles(SRC)) {
       const code = stripComments(readFileSync(file, 'utf8'));
-      // A bare global fetch call: `fetch(` not preceded by a `.` (so `.fetch(`
-      // member calls and identifiers like `fetchImage(` are excluded).
-      if (/(?<![\w.])fetch\s*\(/.test(code)) {
+      if (bare.test(code) || qualified.test(code)) {
         offenders.push(file.replace(SRC, 'src'));
       }
     }
