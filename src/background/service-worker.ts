@@ -89,11 +89,24 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 onContextMenuClicked((mode) => {
-  void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-    const tab = tabs[0];
-    if (tab?.id !== undefined) {
-      void runSend(tab.id, hostnameOf(tab.url), mode);
-    }
-  });
+  void sendActiveTab(mode);
+});
+
+async function sendActiveTab(mode?: CaptureMode): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id !== undefined) {
+    await runSend(tab.id, hostnameOf(tab.url), mode);
+  }
+}
+
+// Popup "Send this page" forwards here (it has no active-tab id).
+chrome.runtime.onMessage.addListener((message: unknown) => {
+  if (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: string }).type === 'send'
+  ) {
+    void sendActiveTab();
+  }
 });
 /* c8 ignore stop */
