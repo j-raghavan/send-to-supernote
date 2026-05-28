@@ -14,7 +14,7 @@
  *            password. After reconnect the retained job retries and completes
  *            (ties to F9-FR1).
  *  - F2-AC5: disconnect clears the credential keys and pending jobs.
- *  - D-3 / I-2 (login leg): the only network destination is cloud.supernote.com.
+ *  - D-3 / I-2 (login leg): the only network destination is viewer.supernote.com.
  *
  * All chrome.* / network are faked; no real Supernote/S3 is contacted.
  */
@@ -95,13 +95,13 @@ describe('F2 auth flow (integration, mocked network)', () => {
       expect(JSON.stringify(http.requests)).not.toContain('PLAIN-TEXT-SECRET');
     });
 
-    it('contacts ONLY cloud.supernote.com during login (D-3 / I-2 login leg)', async () => {
+    it('contacts ONLY viewer.supernote.com during login (D-3 / I-2 login leg)', async () => {
       connectStubs(http);
 
       await connectAccount(deps, { account: 'reader@x.com', password: 'pw' });
 
       for (const url of http.urls) {
-        expect(new URL(url).host).toBe('cloud.supernote.com');
+        expect(new URL(url).host).toBe('viewer.supernote.com');
       }
     });
   });

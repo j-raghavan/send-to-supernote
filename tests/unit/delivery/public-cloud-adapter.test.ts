@@ -173,12 +173,12 @@ describe('uploadToCloud (F5-FR2)', () => {
     expect(put.headers!['x-amz-date']).toBeUndefined();
   });
 
-  it('D-3/I-2 destination audit: bytes go only to cloud.supernote.com + Ratta S3 (F5-FR5)', async () => {
+  it('D-3/I-2 destination audit: bytes go only to viewer.supernote.com + Ratta S3 (F5-FR5)', async () => {
     happyPath(http);
     await uploadToCloud(deps(http), input());
     for (const url of http.urls) {
       const host = new URL(url).host;
-      const allowed = host === 'cloud.supernote.com' || host.endsWith('.amazonaws.com');
+      const allowed = host === 'viewer.supernote.com' || host.endsWith('.amazonaws.com');
       expect(allowed, `unexpected destination: ${host}`).toBe(true);
     }
   });

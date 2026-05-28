@@ -16,13 +16,13 @@ import {
   privateCloudNonce,
   privateCloudProfile,
   resolvePublicProfile,
-  VIEWER_PUBLIC_PROFILE,
+  CLOUD_PUBLIC_PROFILE,
 } from '@domain/delivery';
 
 describe('ApiProfile (R-8 / ADR-0003)', () => {
-  it('the default public profile targets cloud.supernote.com with no prefix', () => {
-    expect(DEFAULT_PUBLIC_PROFILE.baseUrl).toBe('https://cloud.supernote.com');
-    expect(DEFAULT_PUBLIC_PROFILE.pathPrefix).toBe('');
+  it('the default public profile targets viewer.supernote.com under /api (F5-FR1 spike)', () => {
+    expect(DEFAULT_PUBLIC_PROFILE.baseUrl).toBe('https://viewer.supernote.com');
+    expect(DEFAULT_PUBLIC_PROFILE.pathPrefix).toBe('/api');
     expect(DEFAULT_PUBLIC_PROFILE.usesCodeEnvelope).toBe(false);
   });
 
@@ -35,27 +35,27 @@ describe('ApiProfile (R-8 / ADR-0003)', () => {
 });
 
 describe('resolvePublicProfile (F5-FR1 / R-8)', () => {
-  it('defaults to the cloud host', () => {
-    expect(DEFAULT_PUBLIC_HOST).toBe('cloud');
+  it('defaults to the viewer host (F5-FR1 spike)', () => {
+    expect(DEFAULT_PUBLIC_HOST).toBe('viewer');
     expect(resolvePublicProfile()).toBe(DEFAULT_PUBLIC_PROFILE);
   });
 
-  it('resolves the cloud host to the default profile (no extra headers)', () => {
-    expect(resolvePublicProfile('cloud')).toBe(DEFAULT_PUBLIC_PROFILE);
-    expect(resolvePublicProfile('cloud').headers).toEqual({});
+  it('resolves the viewer host to the default profile (no extra headers)', () => {
+    expect(resolvePublicProfile('viewer')).toBe(DEFAULT_PUBLIC_PROFILE);
+    expect(resolvePublicProfile('viewer').headers).toEqual({});
   });
 
-  it('resolves the viewer host to the viewer profile with the version header', () => {
-    expect(resolvePublicProfile('viewer')).toBe(VIEWER_PUBLIC_PROFILE);
-    expect(VIEWER_PUBLIC_PROFILE.baseUrl).toBe('https://viewer.supernote.com');
-    expect(VIEWER_PUBLIC_PROFILE.headers.version).toBe('202407');
+  it('resolves the cloud host to the CSRF-gated cloud fallback profile', () => {
+    expect(resolvePublicProfile('cloud')).toBe(CLOUD_PUBLIC_PROFILE);
+    expect(CLOUD_PUBLIC_PROFILE.baseUrl).toBe('https://cloud.supernote.com');
+    expect(CLOUD_PUBLIC_PROFILE.pathPrefix).toBe('/api');
   });
 });
 
 describe('endpointUrl', () => {
   it('joins base + path for the public profile', () => {
     expect(endpointUrl(DEFAULT_PUBLIC_PROFILE, '/file/upload/apply')).toBe(
-      'https://cloud.supernote.com/file/upload/apply',
+      'https://viewer.supernote.com/api/file/upload/apply',
     );
   });
 
@@ -68,13 +68,13 @@ describe('endpointUrl', () => {
 
   it('tolerates a path without a leading slash', () => {
     expect(endpointUrl(DEFAULT_PUBLIC_PROFILE, 'file/list/query')).toBe(
-      'https://cloud.supernote.com/file/list/query',
+      'https://viewer.supernote.com/api/file/list/query',
     );
   });
 
   it('strips a trailing slash on the base url', () => {
     const profile = { ...DEFAULT_PUBLIC_PROFILE, baseUrl: 'https://cloud.supernote.com/' };
-    expect(endpointUrl(profile, '/x')).toBe('https://cloud.supernote.com/x');
+    expect(endpointUrl(profile, '/x')).toBe('https://cloud.supernote.com/api/x');
   });
 });
 

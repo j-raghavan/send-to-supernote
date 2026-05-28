@@ -3,7 +3,7 @@
  *
  * Composes the real use cases — captureReader -> renderDocument -> uploadToCloud
  * — over fakes, and asserts the destination audit (F5-FR5 / F5-AC5 / I-2 / D-3):
- * every network destination is ONLY cloud.supernote.com or Ratta's S3 host. No
+ * every network destination is ONLY viewer.supernote.com or Ratta's S3 host. No
  * third party, no project backend.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -20,7 +20,7 @@ const S3_URL = 'https://supernote-bucket.s3.amazonaws.com/Document/web-clip-xyz?
 
 function allowedDestination(url: string): boolean {
   const host = new URL(url).host;
-  return host === 'cloud.supernote.com' || host.endsWith('.amazonaws.com');
+  return host === 'viewer.supernote.com' || host.endsWith('.amazonaws.com');
 }
 
 describe('Reader View -> public Cloud (integration, D-3/I-2)', () => {
@@ -65,14 +65,14 @@ describe('Reader View -> public Cloud (integration, D-3/I-2)', () => {
     );
     expect(uploaded.ok).toBe(true);
 
-    // Destination audit (F5-FR5 / F5-AC5): only cloud.supernote.com + S3.
+    // Destination audit (F5-FR5 / F5-AC5): only viewer.supernote.com + S3.
     expect(http.urls.length).toBe(3);
     for (const url of http.urls) {
       expect(allowedDestination(url), `unexpected destination: ${url}`).toBe(true);
     }
   });
 
-  it('the apply and finish calls go to cloud.supernote.com; the PUT goes to S3', async () => {
+  it('the apply and finish calls go to viewer.supernote.com; the PUT goes to S3', async () => {
     await uploadToCloud(
       { http, profile: DEFAULT_PUBLIC_PROFILE, token: 'tok' },
       {
@@ -82,8 +82,8 @@ describe('Reader View -> public Cloud (integration, D-3/I-2)', () => {
         fileName: 'x.pdf',
       },
     );
-    expect(new URL(http.urls[0]!).host).toBe('cloud.supernote.com');
+    expect(new URL(http.urls[0]!).host).toBe('viewer.supernote.com');
     expect(new URL(http.urls[1]!).host).toContain('amazonaws.com');
-    expect(new URL(http.urls[2]!).host).toBe('cloud.supernote.com');
+    expect(new URL(http.urls[2]!).host).toBe('viewer.supernote.com');
   });
 });

@@ -20,7 +20,7 @@ export interface ApiHeaders {
 
 /**
  * The pinned API profile: base URL + path prefix + header set + countryCode.
- * Public Cloud uses an empty prefix (`/file/...`); Private Cloud prefixes `/api`.
+ * Both public and private endpoints live under `/api` (confirmed by the spike).
  */
 export interface ApiProfile {
   /** Origin, e.g. `https://cloud.supernote.com` or `http://192.168.x.x:8080`. */
@@ -40,35 +40,37 @@ export interface ApiProfile {
  */
 export type PublicHost = 'cloud' | 'viewer';
 
-export const DEFAULT_PUBLIC_HOST: PublicHost = 'cloud';
+export const DEFAULT_PUBLIC_HOST: PublicHost = 'viewer';
 
 /**
- * Default public Cloud profile (`cloud.supernote.com`, no extra headers). This
- * is the working assumption; the F5-FR1 spike confirms or switches it to the
- * `viewer` profile. Host pinned by the spike — never hardcoded in logic.
+ * Default public profile, pinned by the F5-FR1 live spike (2026-05-28):
+ * `cloud.supernote.com` now returns HTTP 403 `CSRF_TOKEN_EXPIRED`, while
+ * `viewer.supernote.com` accepts the nonce + login flow and returns a token.
+ * All public endpoints live under `/api` (the host without `/api` returns 404);
+ * no extra headers were needed for nonce/login. Pinned by the spike — never
+ * hardcoded in logic.
  */
 export const DEFAULT_PUBLIC_PROFILE: ApiProfile = {
-  baseUrl: 'https://cloud.supernote.com',
-  pathPrefix: '',
+  baseUrl: 'https://viewer.supernote.com',
+  pathPrefix: '/api',
   headers: {},
   usesCodeEnvelope: false,
 };
 
 /**
- * The `viewer.supernote.com` profile variant, which reference clients reach with
- * extra headers (`version`/`equipmentNo`/`channel` — R-8). The exact `version`
- * is a spike output; this carries the reference value as a configurable default.
+ * The `cloud.supernote.com` variant — currently CSRF-gated (HTTP 403), kept as
+ * a fallback in case Ratta reopens it. Same `/api` prefix and envelope.
  */
-export const VIEWER_PUBLIC_PROFILE: ApiProfile = {
-  baseUrl: 'https://viewer.supernote.com',
-  pathPrefix: '',
-  headers: { version: '202407' },
+export const CLOUD_PUBLIC_PROFILE: ApiProfile = {
+  baseUrl: 'https://cloud.supernote.com',
+  pathPrefix: '/api',
+  headers: {},
   usesCodeEnvelope: false,
 };
 
-/** Resolve the public profile for a pinned host (defaulting to `cloud`). */
+/** Resolve the public profile for a pinned host (defaulting to `viewer`). */
 export function resolvePublicProfile(host: PublicHost = DEFAULT_PUBLIC_HOST): ApiProfile {
-  return host === 'viewer' ? VIEWER_PUBLIC_PROFILE : DEFAULT_PUBLIC_PROFILE;
+  return host === 'cloud' ? CLOUD_PUBLIC_PROFILE : DEFAULT_PUBLIC_PROFILE;
 }
 
 /** Build a Private Cloud profile for a user-configured base URL (F8). */

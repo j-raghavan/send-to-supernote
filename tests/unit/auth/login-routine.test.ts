@@ -46,8 +46,8 @@ describe('performLogin (F2-FR0)', () => {
       expect(result.value.token).toBe('tok-123');
       expect(result.value.equipment).toMatch(/^[0-9a-f-]+$/);
     }
-    expect(http.urls[0]).toBe('https://cloud.supernote.com/official/user/query/random/code');
-    expect(http.urls[1]).toBe('https://cloud.supernote.com/official/user/account/login/new');
+    expect(http.urls[0]).toBe('https://viewer.supernote.com/api/official/user/query/random/code');
+    expect(http.urls[1]).toBe('https://viewer.supernote.com/api/official/user/account/login/new');
   });
 
   it('sends the correct login hash and echoes the server timestamp (clock-skew safe)', async () => {

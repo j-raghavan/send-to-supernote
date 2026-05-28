@@ -136,7 +136,7 @@ describe('send saga over the real PublicCloudAdapter (F6 integration)', () => {
       // Destination audit (D-3/I-2).
       for (const url of h.http.urls) {
         const host = new URL(url).host;
-        expect(host === 'cloud.supernote.com' || host.endsWith('.amazonaws.com')).toBe(true);
+        expect(host === 'viewer.supernote.com' || host.endsWith('.amazonaws.com')).toBe(true);
       }
     });
 
