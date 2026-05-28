@@ -229,6 +229,14 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(h.notifier.notifications.some((n) => n.title.includes('Private Cloud'))).toBe(true);
   });
 
+  it('opens Options without a prefill when no account is known', async () => {
+    const deps = { ...h.deps };
+    delete deps.account;
+    h.port.uploadResult = err({ kind: 'auth', errorCode: 'E0401', message: 'expired' });
+    await sendDocument(deps, req());
+    expect(h.options.opens).toEqual([undefined]);
+  });
+
   it('surfaces a non-auth delivery failure with the failure attached (feeds F9)', async () => {
     h.port.uploadResult = err({ kind: 'protocol', message: 'bad apply shape' });
     const result = await sendDocument(h.deps, req());

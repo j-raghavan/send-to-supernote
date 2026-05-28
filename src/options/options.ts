@@ -9,11 +9,15 @@
 /* c8 ignore start */
 import { ChromeStorageLocal } from '../background/chrome-storage';
 import { FetchHttpClient } from '../background/fetch-http-client';
+import { ChromePermissionGranter } from '../background/permissions';
+import { webCryptoSha256Hex, WebCryptoRandomSource } from '../background/crypto';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
+import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
+import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
@@ -92,6 +96,58 @@ async function render(): Promise<void> {
 
   renderOnboarding(current.target);
   renderPrivacy();
+  wirePrivateCloud();
+}
+
+/** Wire the Private Cloud base-URL entry + R-10 warning + connect (F7-FR3). */
+function wirePrivateCloud(): void {
+  const input = byId<HTMLInputElement>('pc-base-url');
+  const saveButton = byId<HTMLButtonElement>('pc-save');
+  const warning = byId('pc-http-warning');
+  const emailInput = byId<HTMLInputElement>('email');
+  const passwordInput = byId<HTMLInputElement>('password');
+  if (!input || !saveButton) {
+    return;
+  }
+
+  input.addEventListener('input', () => {
+    const validated = validateBaseUrl(input.value);
+    showWarning(warning, validated.ok ? httpWarningFor(validated.value) : undefined);
+  });
+
+  saveButton.addEventListener('click', () => {
+    const validated = validateBaseUrl(input.value);
+    if (!validated.ok) {
+      showWarning(warning, 'Enter a valid http(s) server URL.');
+      return;
+    }
+    showWarning(warning, httpWarningFor(validated.value));
+    void connectPrivateCloud(
+      {
+        http: new FetchHttpClient(),
+        sha256hex: webCryptoSha256Hex,
+        random: new WebCryptoRandomSource(),
+        store,
+      },
+      {
+        baseUrl: validated.value.baseUrl,
+        account: emailInput?.value ?? '',
+        password: passwordInput?.value ?? '',
+      },
+    ).then((result) => {
+      if (result.ok) {
+        void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
+      }
+    });
+  });
+}
+
+function showWarning(el: HTMLElement | null, message: string | undefined): void {
+  if (!el) {
+    return;
+  }
+  el.textContent = message ?? '';
+  el.hidden = message === undefined;
 }
 
 /** Render the sync-expectation + target-match onboarding copy (F7-FR6). */

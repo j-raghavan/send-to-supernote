@@ -175,3 +175,14 @@ export interface RenderedBlob {
 export interface Renderer {
   render(html: string, options: RenderOptions): Promise<RenderedBlob>;
 }
+
+/**
+ * Runtime host-permission grant for a user-configured origin (F8-FR1). The
+ * Private Cloud base URL is not a static host permission, so access is requested
+ * at save time via chrome.permissions. Real adapter wraps chrome.permissions;
+ * tests inject a grant/deny toggle.
+ */
+export interface PermissionGranter {
+  /** Request host access for an origin (e.g. "http://192.168.x.x:8080/*"). Returns whether granted. */
+  request(origin: string): Promise<boolean>;
+}
