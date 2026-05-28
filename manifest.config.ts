@@ -3,12 +3,19 @@
  *
  * Kept as plain data so the bundler choice stays swappable (ADR-0002) and the
  * least-privilege permission set is reviewable at a glance (F10-FR2).
+ *
+ * `version` is sourced from package.json so it is the single SemVer source of
+ * truth: bump with `npm version <major|minor|patch>` and the built manifest
+ * (and the release tag, via CI) follow. Chrome manifest versions must be
+ * numeric MAJOR.MINOR.PATCH — do not use SemVer pre-release/build suffixes
+ * (e.g. `-beta`) for store builds.
  */
+import pkg from './package.json' with { type: 'json' };
 
 export const manifest: chrome.runtime.ManifestV3 = {
   manifest_version: 3,
   name: 'Send to Supernote',
-  version: '0.1.0',
+  version: pkg.version,
   description:
     'Capture the current web page and send it to your Supernote tablet via Supernote Cloud or your own Private Cloud.',
 
