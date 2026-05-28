@@ -163,3 +163,47 @@ export function isAuthFailure(httpStatus: number, env: NormalizedEnvelope): bool
   }
   return env.errorCode !== undefined && AUTH_ERROR_CODES.has(env.errorCode);
 }
+
+/** A folder/file entry as returned by `list/query` (both targets, normalized). */
+export interface Folder {
+  id: string;
+  name: string;
+  isFolder: boolean;
+}
+
+/** Outcome category for any delivery step, so call sites branch uniformly. */
+export type DeliveryFailureKind = 'auth' | 'not-found' | 'connection' | 'protocol';
+
+export interface DeliveryFailure {
+  kind: DeliveryFailureKind;
+  /** Application error code from the envelope (e.g. E0401), when present. */
+  errorCode?: string;
+  message: string;
+}
+
+/** Classify a non-success delivery response into a canonical failure. */
+export function classifyDeliveryFailure(
+  httpStatus: number,
+  env: NormalizedEnvelope,
+  fallbackMessage: string,
+): DeliveryFailure {
+  if (isAuthFailure(httpStatus, env)) {
+    return {
+      kind: 'auth',
+      ...(env.errorCode !== undefined ? { errorCode: env.errorCode } : {}),
+      message: env.errorMsg ?? 'Session expired',
+    };
+  }
+  return {
+    kind: 'protocol',
+    ...(env.errorCode !== undefined ? { errorCode: env.errorCode } : {}),
+    message: env.errorMsg ?? fallbackMessage,
+  };
+}
+
+/** Basename of a URL path — `innerName` for the finish step (F5-FR2). */
+export function basenameFromUrl(url: string): string {
+  const withoutQuery = url.split('?', 1).join('');
+  const slash = withoutQuery.lastIndexOf('/');
+  return slash >= 0 ? withoutQuery.slice(slash + 1) : withoutQuery;
+}

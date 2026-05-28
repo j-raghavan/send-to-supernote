@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  basenameFromUrl,
+  classifyDeliveryFailure,
   DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PROFILE,
   endpointUrl,
@@ -153,5 +155,61 @@ describe('isAuthFailure (F2-FR4)', () => {
 
   it('is false for a non-auth failure with no error code', () => {
     expect(isAuthFailure(500, normalizeEnvelope({ success: false }))).toBe(false);
+  });
+});
+
+describe('basenameFromUrl (F5-FR2 innerName)', () => {
+  it('returns the last path segment of a pre-signed S3 URL', () => {
+    expect(basenameFromUrl('https://s3.amazonaws.com/bucket/path/obj-abc123')).toBe('obj-abc123');
+  });
+
+  it('ignores the query string', () => {
+    expect(basenameFromUrl('https://s3.amazonaws.com/bucket/inner.pdf?X-Amz-Sig=zzz')).toBe(
+      'inner.pdf',
+    );
+  });
+
+  it('handles a URL with no path segments', () => {
+    expect(basenameFromUrl('obj-only')).toBe('obj-only');
+  });
+});
+
+describe('classifyDeliveryFailure (F5-FR4)', () => {
+  it('classifies a 401 as an auth failure', () => {
+    const f = classifyDeliveryFailure(401, normalizeEnvelope({ success: false }), 'fallback');
+    expect(f.kind).toBe('auth');
+  });
+
+  it('classifies an E0401 envelope as an auth failure and carries the code', () => {
+    const f = classifyDeliveryFailure(
+      200,
+      normalizeEnvelope({ success: false, errorCode: 'E0401', errorMsg: 'expired' }),
+      'fallback',
+    );
+    expect(f.kind).toBe('auth');
+    expect(f.errorCode).toBe('E0401');
+    expect(f.message).toBe('expired');
+  });
+
+  it('classifies a non-auth failure as protocol with the fallback message', () => {
+    const f = classifyDeliveryFailure(200, normalizeEnvelope({ success: false }), 'fallback');
+    expect(f.kind).toBe('protocol');
+    expect(f.message).toBe('fallback');
+  });
+
+  it('surfaces a non-auth errorCode and message when present', () => {
+    const f = classifyDeliveryFailure(
+      200,
+      normalizeEnvelope({ success: false, errorCode: 'E9999', errorMsg: 'boom' }),
+      'fallback',
+    );
+    expect(f.kind).toBe('protocol');
+    expect(f.errorCode).toBe('E9999');
+    expect(f.message).toBe('boom');
+  });
+
+  it('uses a default auth message when none is provided', () => {
+    const f = classifyDeliveryFailure(401, normalizeEnvelope({ success: false }), 'fallback');
+    expect(f.message).toBe('Session expired');
   });
 });
