@@ -7,7 +7,11 @@ import {
 } from '../../../src/background/offscreen-manager';
 import { FakeOffscreenHost } from '../../fakes/fake-offscreen-host';
 
-describe('OffscreenManager (F1-FR5)', () => {
+// F1-AC3: exactly one offscreen context is created (with declared reasons) and
+// closed after use. The single-instance create/close POLICY is covered here over
+// a FakeOffscreenHost; the live Chrome offscreen-context creation + message-
+// passing reachability is a MANUAL/runtime gate (see DoD), deferred-to-user.
+describe('OffscreenManager (F1-FR5 / F1-AC3 single-instance lifecycle)', () => {
   let host: FakeOffscreenHost;
   let manager: OffscreenManager;
 

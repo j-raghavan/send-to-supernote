@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { manifest } from '../../manifest.config';
 
-describe('manifest (F1-FR1)', () => {
+// F1-AC1 (load in Chrome with no manifest errors + toolbar icon appears) is a
+// MANUAL/runtime install gate — see DoD. These assertions pin the manifest SHAPE
+// that gate depends on (MV3, SW, toolbar action, options, icons); the live
+// "loads in Chrome stable with zero console errors" check is deferred-to-user.
+describe('manifest (F1-FR1 / F1-AC1 manifest shape)', () => {
   it('declares Manifest V3', () => {
     expect(manifest.manifest_version).toBe(3);
   });
