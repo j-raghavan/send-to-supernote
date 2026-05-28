@@ -259,3 +259,17 @@ export function basenameFromUrl(url: string): string {
   const slash = withoutQuery.lastIndexOf('/');
   return slash >= 0 ? withoutQuery.slice(slash + 1) : withoutQuery;
 }
+
+/** A canonical connection failure (server unreachable, TLS, wrong URL) — F8-FR6. */
+export function connectionFailure(message: string): DeliveryFailure {
+  return { kind: 'connection', message };
+}
+
+/**
+ * Private Cloud apply nonce: `{10 random digits}{timestamp}` (Interfaces /
+ * F8-FR2). The random digits come from the injected RandomSource; the timestamp
+ * is the apply-call time in ms.
+ */
+export function privateCloudNonce(randomDigits: string, timestamp: number): string {
+  return `${randomDigits}${String(timestamp)}`;
+}

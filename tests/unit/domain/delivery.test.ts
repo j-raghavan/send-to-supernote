@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   basenameFromUrl,
   classifyDeliveryFailure,
+  connectionFailure,
   DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PROFILE,
   endpointUrl,
@@ -11,6 +12,7 @@ import {
   normalizeFolderEntry,
   normalizeIsFolder,
   parseFolderList,
+  privateCloudNonce,
   privateCloudProfile,
   resolvePublicProfile,
   VIEWER_PUBLIC_PROFILE,
@@ -289,5 +291,19 @@ describe('folder normalization (F5-FR3 / F7-FR2)', () => {
 
   it('returns undefined when there is no Document folder', () => {
     expect(findDocumentFolderId([{ id: '1', name: 'Other', isFolder: true }])).toBeUndefined();
+  });
+});
+
+describe('connectionFailure (F8-FR6)', () => {
+  it('builds a canonical connection failure', () => {
+    const f = connectionFailure("can't reach server");
+    expect(f.kind).toBe('connection');
+    expect(f.message).toBe("can't reach server");
+  });
+});
+
+describe('privateCloudNonce (F8-FR2)', () => {
+  it('concatenates 10 random digits and the timestamp', () => {
+    expect(privateCloudNonce('1234567890', 1717000000000)).toBe('12345678901717000000000');
   });
 });
