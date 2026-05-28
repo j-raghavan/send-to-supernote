@@ -16,6 +16,7 @@ import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
+import { onboardingCopy } from '@settings/onboarding';
 import { PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from './privacy-copy';
 import {
   buildOptionsView,
@@ -72,6 +73,7 @@ async function render(): Promise<void> {
       const parsed = parseTargetChange(target.value);
       if (parsed) {
         void settings.setTarget(parsed);
+        renderOnboarding(parsed);
       }
     });
   }
@@ -88,7 +90,16 @@ async function render(): Promise<void> {
     await renderFolderPicker(current.target);
   }
 
+  renderOnboarding(current.target);
   renderPrivacy();
+}
+
+/** Render the sync-expectation + target-match onboarding copy (F7-FR6). */
+function renderOnboarding(target: 'cloud' | 'privatecloud'): void {
+  const copy = byId('onboarding-copy');
+  if (copy) {
+    copy.textContent = onboardingCopy(target);
+  }
 }
 
 /** Wire the Privacy Policy link + "password never stored" statement (F7-FR5). */
