@@ -232,6 +232,13 @@ body {
   border-top: 1px solid var(--line);
 }
 
+.host {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+
 [hidden] {
   display: none !important;
 }

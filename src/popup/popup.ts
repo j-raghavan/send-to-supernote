@@ -18,6 +18,7 @@ import { connectAccount } from '@auth/connect-account';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
+import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import type { CaptureMode, Target } from '@domain/settings';
 import { buildPopupView } from './popup-view';
 import { PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from '../options/privacy-copy';
@@ -65,6 +66,11 @@ async function render(): Promise<void> {
   const privacy = byId<HTMLAnchorElement>('privacy');
   if (privacy) privacy.href = PRIVACY_POLICY_URL;
   byId('settings')?.addEventListener('click', () => void chrome.runtime.openOptionsPage());
+
+  // Build/host indicator — confirms which API host the loaded build targets
+  // (a fresh build reads "viewer.supernote.com"; a stale one would read "cloud").
+  const apiHost = byId('api-host');
+  if (apiHost) apiHost.textContent = `API: ${new URL(DEFAULT_PUBLIC_PROFILE.baseUrl).host}`;
 
   if (view.canSend) {
     show('view-signin', false);
