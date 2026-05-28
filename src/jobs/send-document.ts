@@ -26,6 +26,7 @@ import { buildUploadFilename } from '@shared/filename';
 import type { DeliveryPort, UploadInput } from '@delivery/delivery-port';
 import { type DeliveryOutcome, routeDeliveryFailure } from '@delivery/route-delivery-failure';
 import { canFallbackToPrivate, offerPrivateCloudFallback } from '@delivery/fallback';
+import { DEFAULT_FEATURE_FLAGS, type FeatureFlags, isPathEnabled } from '@shared/feature-flags';
 import type { AuthFailureDeps } from '@auth/handle-auth-failure';
 import { type CaptureError, type CaptureReaderDeps, captureReader } from '@capture/capture-reader';
 import { type CaptureFullPageDeps, captureFullPage } from '@capture/capture-fullpage';
@@ -70,6 +71,8 @@ export interface SendDocumentDeps {
   clock: Clock;
   /** True when a valid token exists for the target (F6-AC6 connect-first gate). */
   hasToken: (target: Target) => Promise<boolean>;
+  /** Per-path feature flags (F9-FR4 / I-6); defaults to all-enabled when absent. */
+  flags?: FeatureFlags;
   /** The connected account email, used to prefill the re-connect form (F2-FR4). */
   account?: string;
   /** Auth-failure recovery deps (F2-FR4), used when a step returns an auth failure. */
@@ -92,7 +95,13 @@ export interface SendDocumentDeps {
   };
 }
 
-export type SendErrorKind = 'not-connected' | 'capture' | 'render' | 'auth' | 'delivery';
+export type SendErrorKind =
+  | 'not-connected'
+  | 'path-disabled'
+  | 'capture'
+  | 'render'
+  | 'auth'
+  | 'delivery';
 
 export interface SendError {
   kind: SendErrorKind;
@@ -113,8 +122,16 @@ export async function sendDocument(
   deps: SendDocumentDeps,
   req: SendRequest,
 ): Promise<Result<SendSuccess, SendError>> {
-  // queued -> ensure token
+  // queued -> path enabled? (F9-FR4: a disabled path is unavailable, I-6)
   await deps.badge.set('busy');
+  const flags = deps.flags ?? DEFAULT_FEATURE_FLAGS;
+  if (!isPathEnabled(flags, req.target)) {
+    await deps.notifier.notify(noteSendFailed('This upload path is currently disabled.'));
+    await deps.badge.set('error');
+    return fail('path-disabled', 'Upload path disabled', 'failed');
+  }
+
+  // ensure token (connect-first gate, F6-AC6)
   if (!(await deps.hasToken(req.target))) {
     await deps.notifier.notify(NOTE_CONNECT_FIRST);
     await deps.badge.set('error');
@@ -241,8 +258,14 @@ async function finishDeliveryFailure(
 
   // Non-auth public failure: offer the Private Cloud fallback reusing the
   // already-converted blob (F9-FR2). Only eligible from a public-Cloud send with
-  // a configured Private Cloud (the saga wires `fallback` only then).
-  if (req.target === 'cloud' && deps.fallback && canFallbackToPrivate(failure, true)) {
+  // a configured AND enabled Private Cloud path (F9-FR4).
+  const privateEnabled = (deps.flags ?? DEFAULT_FEATURE_FLAGS).privateCloudEnabled;
+  if (
+    req.target === 'cloud' &&
+    deps.fallback &&
+    privateEnabled &&
+    canFallbackToPrivate(failure, true)
+  ) {
     const privatePort = deps.fallback.privatePort();
     const destination = await resolveDestination(privatePort, deps.fallback.privateFolderId);
     const fb = await offerPrivateCloudFallback(

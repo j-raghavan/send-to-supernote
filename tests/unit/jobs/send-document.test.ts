@@ -297,4 +297,34 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     const remaining = await h.blobs.get('00000000-0000-0000-0000-000000000001');
     expect(remaining).toBeUndefined();
   });
+
+  it('blocks a send when the target path is disabled (F9-FR4 / I-6)', async () => {
+    h.deps.flags = { cloudEnabled: false, privateCloudEnabled: true };
+    const result = await sendDocument(h.deps, req());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('path-disabled');
+    }
+    expect(h.port.uploadCalls).toHaveLength(0);
+  });
+
+  it('disabling public leaves private usable (I-6)', async () => {
+    h.deps.flags = { cloudEnabled: false, privateCloudEnabled: true };
+    const result = await sendDocument(h.deps, req({ target: 'privatecloud' }));
+    expect(result.ok).toBe(true);
+  });
+
+  it('does not offer the fallback when the private path is disabled (F9-FR4)', async () => {
+    h.port.uploadResult = err({ kind: 'protocol', message: 'cloud endpoint changed' });
+    h.deps.flags = { cloudEnabled: true, privateCloudEnabled: false };
+    const pcPort = new FakeDeliveryPort();
+    const offer = vi.fn().mockResolvedValue(true);
+    h.deps.fallback = { privatePort: () => pcPort, offer };
+
+    const result = await sendDocument(h.deps, req());
+
+    expect(result.ok).toBe(false);
+    expect(offer).not.toHaveBeenCalled();
+    expect(pcPort.uploadCalls).toHaveLength(0);
+  });
 });

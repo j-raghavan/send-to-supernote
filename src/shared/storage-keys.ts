@@ -29,6 +29,8 @@ export const StorageKeys = {
 
   // Jobs (F9).
   pendingJobs: 'jobs.pending',
+  jobHistory: 'jobs.history',
+  featureFlags: 'flags.paths',
 } as const;
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];

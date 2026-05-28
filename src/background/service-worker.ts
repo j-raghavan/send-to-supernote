@@ -16,6 +16,8 @@ import { PrivateCloudStore } from '@auth/private-cloud-store';
 import type { Target } from '@domain/settings';
 import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-target';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
+import { type FeatureFlags, normalizeFlags } from '@shared/feature-flags';
+import { StorageKeys } from '@shared/storage-keys';
 import type { CaptureMode } from '@domain/capture';
 import { WebCryptoRandomSource } from './crypto';
 import { offerFallbackPrompt } from './fallback-prompt';
@@ -50,6 +52,7 @@ interface SendContext {
   account?: string;
   privateCloud?: PrivateTargetConfig;
   privateFolderId?: string;
+  flags: FeatureFlags;
 }
 
 function buildDeps(ctx: SendContext): SendDocumentDeps {
@@ -70,6 +73,7 @@ function buildDeps(ctx: SendContext): SendDocumentDeps {
     badge,
     clock,
     hasToken: (target: Target) => hasToken(target),
+    flags: ctx.flags,
     ...(ctx.account !== undefined ? { account: ctx.account } : {}),
     authDeps: {
       clearToken: () => tokens.clearToken(),
@@ -106,9 +110,11 @@ async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Pro
       ? { baseUrl: pcBaseUrl, token: pcToken }
       : undefined;
   const pcFolderId = await privateStore.getFolderId();
+  const flags = normalizeFlags(await store.get(StorageKeys.featureFlags));
   const deps = buildDeps({
     tabId,
     cloudToken,
+    flags,
     ...(account !== undefined ? { account } : {}),
     ...(privateCloud !== undefined ? { privateCloud } : {}),
     ...(pcFolderId !== undefined ? { privateFolderId: pcFolderId } : {}),
