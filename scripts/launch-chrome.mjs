@@ -75,10 +75,14 @@ function main() {
   }
   const profileDir = join(tmpdir(), 'send-to-supernote-dev-profile');
   mkdirSync(profileDir, { recursive: true });
+  // NOTE: --load-extension is silently ignored by recent Chrome (2025+), and
+  // pairing it with --disable-extensions-except actively suppresses a manual
+  // Load-unpacked in the same window. So we DON'T pass those — we just open a
+  // clean dev profile at chrome://extensions and let the user Load unpacked
+  // (the dist/ path is copied to the clipboard below). The dev profile
+  // persists, so you only Load unpacked once.
   const args = [
     `--user-data-dir=${profileDir}`,
-    `--disable-extensions-except=${distDir}`,
-    `--load-extension=${distDir}`,
     '--no-first-run',
     '--no-default-browser-check',
     'chrome://extensions',
