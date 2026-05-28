@@ -12,10 +12,12 @@ import { sendDocument, type SendDocumentDeps } from '@jobs/send-document';
 import { resolveSendRequest } from '@jobs/resolve-send-request';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
+import { PrivateCloudStore } from '@auth/private-cloud-store';
 import type { Target } from '@domain/settings';
-import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
+import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-target';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import type { CaptureMode } from '@domain/capture';
+import { WebCryptoRandomSource } from './crypto';
 import { FetchHttpClient } from './fetch-http-client';
 import { ChromeStorageLocal } from './chrome-storage';
 import { IndexedDbBlobTransfer } from './blob-transfer';
@@ -36,22 +38,36 @@ const notifier = new ChromeNotifier();
 const badge = new ChromeBadge();
 const clock = new SystemClock();
 const tokens = new TokenStore(store);
+const privateStore = new PrivateCloudStore(store);
 const settingsStore = new SettingsStore(store);
 const offscreen = new OffscreenManager(new ChromeOffscreenHost());
+const random = new WebCryptoRandomSource();
 
-function buildDeps(tabId: number, token: string, account?: string): SendDocumentDeps {
+interface SendContext {
+  tabId: number;
+  cloudToken: string;
+  account?: string;
+  privateCloud?: PrivateTargetConfig;
+}
+
+function buildDeps(ctx: SendContext): SendDocumentDeps {
   return {
-    // Private Cloud adapter is added in F8; default to public Cloud for now.
-    resolveDelivery: (_target: Target) =>
-      new PublicCloudAdapter({ http, profile: DEFAULT_PUBLIC_PROFILE, token }),
-    capture: { extractor: new ScriptingExtractor(tabId) },
+    resolveDelivery: (target: Target) =>
+      resolveDelivery(target, {
+        http,
+        random,
+        clock,
+        cloud: { profile: DEFAULT_PUBLIC_PROFILE, token: ctx.cloudToken },
+        ...(ctx.privateCloud !== undefined ? { privateCloud: ctx.privateCloud } : {}),
+      }),
+    capture: { extractor: new ScriptingExtractor(ctx.tabId) },
     render: { renderer: new OffscreenRenderer(offscreen) },
     blobs,
     notifier,
     badge,
     clock,
-    hasToken: async (_target: Target) => (await tokens.getToken()) !== undefined,
-    ...(account !== undefined ? { account } : {}),
+    hasToken: (target: Target) => hasToken(target),
+    ...(ctx.account !== undefined ? { account: ctx.account } : {}),
     authDeps: {
       clearToken: () => tokens.clearToken(),
       notifier,
@@ -60,13 +76,37 @@ function buildDeps(tabId: number, token: string, account?: string): SendDocument
   };
 }
 
+async function hasToken(target: Target): Promise<boolean> {
+  const token = target === 'privatecloud' ? await privateStore.getToken() : await tokens.getToken();
+  return token !== undefined && token.length > 0;
+}
+
 async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Promise<void> {
   const settings = await settingsStore.get();
-  const token = (await tokens.getToken()) ?? '';
+  const cloudToken = (await tokens.getToken()) ?? '';
   const account = await tokens.getAccount();
-  const deps = buildDeps(tabId, token, account);
-  const request = resolveSendRequest(settings, { hostname }, mode ? { mode } : {});
-  await sendDocument(deps, request);
+  const pcBaseUrl = await privateStore.getBaseUrl();
+  const pcToken = await privateStore.getToken();
+  const privateCloud =
+    pcBaseUrl !== undefined && pcToken !== undefined
+      ? { baseUrl: pcBaseUrl, token: pcToken }
+      : undefined;
+  const deps = buildDeps({
+    tabId,
+    cloudToken,
+    ...(account !== undefined ? { account } : {}),
+    ...(privateCloud !== undefined ? { privateCloud } : {}),
+  });
+  const folderId =
+    settings.target === 'privatecloud' ? await privateStore.getFolderId() : undefined;
+  const request = resolveSendRequest(
+    settings,
+    { hostname },
+    {
+      ...(mode !== undefined ? { mode } : {}),
+    },
+  );
+  await sendDocument(deps, folderId !== undefined ? { ...request, folderId } : request);
 }
 
 function hostnameOf(url: string | undefined): string {
