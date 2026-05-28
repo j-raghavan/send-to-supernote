@@ -60,3 +60,28 @@ export interface RandomSource {
   /** An RFC-4122 UUID. */
   uuid(): string;
 }
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT';
+
+export interface HttpRequest {
+  url: string;
+  method: HttpMethod;
+  headers?: Record<string, string>;
+  /** JSON-serializable body, raw bytes, or FormData (multipart) — adapter-encoded. */
+  body?: unknown;
+}
+
+export interface HttpResponse {
+  status: number;
+  /** Parsed JSON body when the response is JSON; otherwise undefined. */
+  json?: unknown;
+}
+
+/**
+ * The ONLY network seam. The real adapter wraps `fetch` (the sole `fetch` in
+ * the codebase); tests inject a fake that returns scripted responses and records
+ * every requested URL so destinations can be asserted (D-3 / I-2).
+ */
+export interface HttpClient {
+  request(req: HttpRequest): Promise<HttpResponse>;
+}
