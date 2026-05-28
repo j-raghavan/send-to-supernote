@@ -8,6 +8,72 @@
   <body>
     <main id="app">
       <h1>Send to Supernote — Options</h1>
+
+      <section id="connection">
+        <h2>Account</h2>
+        <p id="connection-status">Loading…</p>
+        <form id="connect-form">
+          <input id="email" type="email" placeholder="Supernote email" autocomplete="username" />
+          <input
+            id="password"
+            type="password"
+            placeholder="Password"
+            autocomplete="current-password"
+          />
+          <button id="connect" type="submit">Connect</button>
+          <button id="disconnect" type="button">Disconnect</button>
+        </form>
+        <p class="note">Your password is never stored — only a session token is saved locally.</p>
+      </section>
+
+      <section id="defaults">
+        <h2>Capture defaults</h2>
+        <label
+          >Mode
+          <select id="default-mode">
+            <option value="reader">Reader View</option>
+            <option value="fullpage">Full Page</option>
+          </select>
+        </label>
+        <label
+          >Format
+          <select id="default-format">
+            <option value="pdf">PDF</option>
+            <option value="epub">EPUB</option>
+          </select>
+        </label>
+        <label
+          >Target
+          <select id="target">
+            <option value="cloud">Supernote Cloud</option>
+            <option value="privatecloud">Private Cloud (self-hosted)</option>
+          </select>
+        </label>
+        <label
+          ><input id="confirm-filename" type="checkbox" /> Confirm filename before each send</label
+        >
+      </section>
+
+      <section id="folder">
+        <h2>Destination folder</h2>
+        <ul id="folder-list"></ul>
+      </section>
+
+      <section id="privatecloud-section">
+        <h2>Private Cloud</h2>
+        <input id="pc-base-url" type="url" placeholder="https://supernote.home.lan" />
+        <button id="pc-save" type="button">Save server URL</button>
+        <p id="pc-http-warning" class="warning" hidden></p>
+      </section>
+
+      <section id="onboarding">
+        <h2>Before you start</h2>
+        <p id="onboarding-copy"></p>
+      </section>
+
+      <footer>
+        <a id="privacy-link" href="#" target="_blank" rel="noopener">Privacy Policy</a>
+      </footer>
     </main>
     <script type="module" src="./options.ts"></script>
   </body>
