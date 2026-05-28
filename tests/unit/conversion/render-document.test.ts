@@ -50,4 +50,36 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
     }
     expect(renderer.calls).toHaveLength(0);
   });
+
+  it('inlines images before rendering when a fetcher is provided (F3-FR4)', async () => {
+    const withImg: CapturedDocument = {
+      mode: 'reader',
+      title: 'T',
+      html: '<p>x</p><img src="https://ok/a.png">',
+    };
+    const fetchImage = (url: string): Promise<string> =>
+      Promise.resolve(`data:image/png;base64,${btoa(url)}`);
+    const result = await renderDocument(
+      { renderer, fetchImage },
+      { document: withImg, format: 'pdf' },
+    );
+    expect(result.ok).toBe(true);
+    expect(renderer.calls[0]!.html).toContain('data:image/png;base64,');
+    expect(renderer.calls[0]!.html).not.toContain('https://ok/a.png');
+  });
+
+  it('skips an un-fetchable image but still renders (F3-AC3)', async () => {
+    const withImg: CapturedDocument = {
+      mode: 'reader',
+      title: 'T',
+      html: '<p>keep</p><img src="https://blocked/x.png">',
+    };
+    const fetchImage = (): Promise<undefined> => Promise.resolve(undefined);
+    const result = await renderDocument(
+      { renderer, fetchImage },
+      { document: withImg, format: 'pdf' },
+    );
+    expect(result.ok).toBe(true);
+    expect(renderer.calls[0]!.html).toBe('<p>keep</p>');
+  });
 });

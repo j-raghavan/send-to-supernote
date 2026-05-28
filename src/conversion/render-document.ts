@@ -12,6 +12,7 @@ import { err, ok, type Result } from '@shared/result';
 import type { Renderer, RenderedBlob } from '@shared/ports';
 import type { CapturedDocument } from '@domain/capture';
 import { type OutputFormat, type PageSize, resolveRenderOptions } from '@domain/conversion';
+import { type ImageFetcher, inlineImages } from './inline-images';
 
 export type ConversionErrorKind = 'render-failed';
 
@@ -22,6 +23,12 @@ export interface ConversionError {
 
 export interface RenderDeps {
   renderer: Renderer;
+  /**
+   * Optional image fetcher. When provided, images are inlined as data URIs and
+   * un-fetchable images are skipped before rendering (F3-FR4); when absent, the
+   * HTML is rendered as-is.
+   */
+  fetchImage?: ImageFetcher;
 }
 
 export interface RenderParams {
@@ -37,11 +44,15 @@ export async function renderDocument(
 ): Promise<Result<RenderedBlob, ConversionError>> {
   const options = resolveRenderOptions(params.format, params.pageSize);
 
-  const first = await tryRender(deps.renderer, params.document.html, options);
+  const html = deps.fetchImage
+    ? (await inlineImages(params.document.html, deps.fetchImage)).html
+    : params.document.html;
+
+  const first = await tryRender(deps.renderer, html, options);
   if (first) {
     return ok(first);
   }
-  const second = await tryRender(deps.renderer, params.document.html, options);
+  const second = await tryRender(deps.renderer, html, options);
   if (second) {
     return ok(second);
   }
