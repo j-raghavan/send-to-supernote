@@ -8,8 +8,12 @@
  * (guard a) — so it is coverage-excluded (architecture §9.3).
  */
 /* c8 ignore start */
-import { sendDocument, type SendDocumentDeps } from '@jobs/send-document';
+import { type SendDocumentDeps } from '@jobs/send-document';
+import { recordedSend } from '@jobs/recorded-send';
 import { resolveSendRequest } from '@jobs/resolve-send-request';
+import { JobQueue } from '@jobs/job-queue';
+import { JobHistory } from '@jobs/job-history';
+import { retryPending } from '@jobs/retry-pending';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { PrivateCloudStore } from '@auth/private-cloud-store';
@@ -45,6 +49,8 @@ const privateStore = new PrivateCloudStore(store);
 const settingsStore = new SettingsStore(store);
 const offscreen = new OffscreenManager(new ChromeOffscreenHost());
 const random = new WebCryptoRandomSource();
+const queue = new JobQueue(store, clock);
+const history = new JobHistory(store, clock);
 
 interface SendContext {
   tabId: number;
@@ -127,7 +133,52 @@ async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Pro
       ...(mode !== undefined ? { mode } : {}),
     },
   );
-  await sendDocument(deps, folderId !== undefined ? { ...request, folderId } : request);
+  await recordedSend(history, deps, folderId !== undefined ? { ...request, folderId } : request);
+}
+
+/** Build the resolveDelivery factory used for retry (no tab/capture needed). */
+function deliveryFactory(ctx: {
+  cloudToken: string;
+  privateCloud?: PrivateTargetConfig;
+}): (target: Target) => ReturnType<typeof resolveDelivery> {
+  return (target) =>
+    resolveDelivery(target, {
+      http,
+      random,
+      clock,
+      cloud: { profile: DEFAULT_PUBLIC_PROFILE, token: ctx.cloudToken },
+      ...(ctx.privateCloud !== undefined ? { privateCloud: ctx.privateCloud } : {}),
+    });
+}
+
+/** Retry retained jobs after a target reconnects (F9-FR1). */
+async function retryAfterReconnect(target: Target): Promise<void> {
+  const cloudToken = (await tokens.getToken()) ?? '';
+  const pcBaseUrl = await privateStore.getBaseUrl();
+  const pcToken = await privateStore.getToken();
+  const privateCloud =
+    pcBaseUrl !== undefined && pcToken !== undefined
+      ? { baseUrl: pcBaseUrl, token: pcToken }
+      : undefined;
+  await retryPending(
+    {
+      queue,
+      blobs,
+      resolveDelivery: deliveryFactory({
+        cloudToken,
+        ...(privateCloud !== undefined ? { privateCloud } : {}),
+      }),
+    },
+    target,
+  );
+}
+
+/** Prune stale pending jobs and free their blobs (F9-FR5). */
+async function pruneStaleJobs(): Promise<void> {
+  const pruned = await queue.prune();
+  for (const job of pruned) {
+    await blobs.delete(job.blobHandle);
+  }
 }
 
 function hostnameOf(url: string | undefined): string {
@@ -143,6 +194,12 @@ function hostnameOf(url: string | undefined): string {
 
 chrome.runtime.onInstalled.addListener(() => {
   registerContextMenus();
+  void pruneStaleJobs();
+});
+
+// On wake, prune stale jobs (jobs themselves persist in chrome.storage.local).
+chrome.runtime.onStartup.addListener(() => {
+  void pruneStaleJobs();
 });
 
 chrome.action.onClicked.addListener((tab) => {
@@ -162,14 +219,17 @@ async function sendActiveTab(mode?: CaptureMode): Promise<void> {
   }
 }
 
-// Popup "Send this page" forwards here (it has no active-tab id).
+// Popup "Send this page" forwards here; Options posts "reconnected" after a
+// successful (re)connect so retained jobs for that target are retried (F9-FR1).
 chrome.runtime.onMessage.addListener((message: unknown) => {
-  if (
-    typeof message === 'object' &&
-    message !== null &&
-    (message as { type?: string }).type === 'send'
-  ) {
+  if (typeof message !== 'object' || message === null) {
+    return;
+  }
+  const msg = message as { type?: string; target?: Target };
+  if (msg.type === 'send') {
     void sendActiveTab();
+  } else if (msg.type === 'reconnected' && msg.target !== undefined) {
+    void retryAfterReconnect(msg.target);
   }
 });
 /* c8 ignore stop */
