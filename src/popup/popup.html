@@ -6,14 +6,74 @@
     <title>Send to Supernote</title>
   </head>
   <body>
-    <main id="app">
-      <h1>Send to Supernote</h1>
-      <p id="status">Loading…</p>
-      <button id="send" type="button">Send this page</button>
-      <button id="options" type="button">Options</button>
-      <h2>Recent sends</h2>
-      <pre id="history"></pre>
-    </main>
+    <div class="app">
+      <header class="hdr">
+        <img id="logo" class="hdr__logo" alt="" />
+        <span class="hdr__title">Send to Supernote</span>
+        <span class="hdr__spacer"></span>
+      </header>
+
+      <!-- Sign-in view: pick ONE provider, then sign in. -->
+      <section id="view-signin" class="view" hidden>
+        <div class="seg">
+          <button id="seg-cloud" class="seg__btn is-active" type="button">Supernote Cloud</button>
+          <button id="seg-private" class="seg__btn" type="button">Private Cloud</button>
+        </div>
+        <form id="signin-form" class="form">
+          <input
+            id="pc-url"
+            class="input"
+            type="url"
+            placeholder="https://supernote.home.lan"
+            autocomplete="off"
+            hidden
+          />
+          <input
+            id="email"
+            class="input"
+            type="email"
+            placeholder="Supernote email"
+            autocomplete="username"
+            required
+          />
+          <input
+            id="password"
+            class="input"
+            type="password"
+            placeholder="Password"
+            autocomplete="current-password"
+            required
+          />
+          <p id="signin-warning" class="warning" hidden></p>
+          <button id="signin-btn" class="btn btn--primary" type="submit">Sign in</button>
+          <p id="signin-error" class="error" hidden></p>
+        </form>
+        <p id="signin-note" class="muted"></p>
+      </section>
+
+      <!-- Connected view: defaults are enough — one tap to send. -->
+      <section id="view-connected" class="view" hidden>
+        <div class="page">
+          <span class="page__label">Sending this page</span>
+          <span id="page-title" class="page__title">…</span>
+        </div>
+        <div class="seg">
+          <button id="mode-reader" class="seg__btn" type="button">Reader View</button>
+          <button id="mode-fullpage" class="seg__btn" type="button">Full Page</button>
+        </div>
+        <button id="send" class="btn btn--primary btn--lg" type="button">Send to Supernote</button>
+        <p id="send-status" class="muted" hidden></p>
+        <div class="account">
+          <span id="account-chip" class="chip"></span>
+          <button id="signout" class="link" type="button">Sign out</button>
+        </div>
+      </section>
+
+      <footer class="ftr">
+        <a id="privacy" class="link link--muted" href="#" target="_blank" rel="noopener">Privacy</a>
+        <button id="settings" class="link link--muted" type="button">All settings</button>
+      </footer>
+    </div>
     <script type="module" src="./popup.ts"></script>
   </body>
 </html>
