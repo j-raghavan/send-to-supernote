@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   NO_THIRD_PARTY,
+  NO_THIRD_PARTY_SHARING,
   PASSWORD_NEVER_STORED,
   PRIVACY_POLICY_URL,
 } from '../../../src/options/privacy-copy';
@@ -18,5 +19,10 @@ describe('privacy copy (F7-FR5 / F10-FR1)', () => {
 
   it('states no third party / no server we run (D-3)', () => {
     expect(NO_THIRD_PARTY.toLowerCase()).toContain('third party');
+  });
+
+  it('F10-FR6: states no third-party sharing and no OAuth', () => {
+    expect(NO_THIRD_PARTY_SHARING.toLowerCase()).toContain('no oauth');
+    expect(NO_THIRD_PARTY_SHARING.toLowerCase()).toContain('no third party');
   });
 });

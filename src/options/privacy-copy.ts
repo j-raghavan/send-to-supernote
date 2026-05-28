@@ -20,3 +20,11 @@ export const PASSWORD_NEVER_STORED =
 /** Short data-flow assurance (no third party, client-only — D-3). */
 export const NO_THIRD_PARTY =
   'Your page content goes only to your chosen Supernote target — never to any third party or a server we run.';
+
+/**
+ * The positive no-third-party-sharing / no-OAuth story (F10-FR6). Dropbox/Drive
+ * were dropped (D-4), so the extension uses no third-party OAuth and shares data
+ * with no third party at all.
+ */
+export const NO_THIRD_PARTY_SHARING =
+  'This extension uses no third-party sign-in (no OAuth) and shares your data with no third party.';

@@ -46,6 +46,11 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
     expect(manifest.permissions).not.toContain('declarativeNetRequest');
     expect(manifest.permissions).not.toContain('declarativeNetRequestWithHostAccess');
   });
+
+  it('F10-FR6: identity is absent in both required and optional permissions (no third-party OAuth)', () => {
+    expect(manifest.permissions).not.toContain('identity');
+    expect(manifest.optional_permissions ?? []).not.toContain('identity');
+  });
 });
 
 describe('manifest host permissions (F1-FR3)', () => {

@@ -21,7 +21,7 @@ import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
-import { PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from './privacy-copy';
+import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from './privacy-copy';
 import {
   buildOptionsView,
   parseFormatChange,
@@ -158,7 +158,7 @@ function renderOnboarding(target: 'cloud' | 'privatecloud'): void {
   }
 }
 
-/** Wire the Privacy Policy link + "password never stored" statement (F7-FR5). */
+/** Wire the Privacy Policy link + "password never stored" + no-sharing copy (F7-FR5 / F10-FR6). */
 function renderPrivacy(): void {
   const link = byId<HTMLAnchorElement>('privacy-link');
   if (link) {
@@ -167,6 +167,10 @@ function renderPrivacy(): void {
   const note = document.querySelector('#connection .note');
   if (note) {
     note.textContent = PASSWORD_NEVER_STORED;
+  }
+  const sharing = byId('no-sharing');
+  if (sharing) {
+    sharing.textContent = NO_THIRD_PARTY_SHARING;
   }
 }
 
