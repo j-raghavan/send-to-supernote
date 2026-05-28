@@ -116,3 +116,20 @@ export function normalizeEnvelope(body: unknown): NormalizedEnvelope {
     payload: root,
   };
 }
+
+/** Application error codes that mean the token is invalid/expired (F2-FR4). */
+export const AUTH_ERROR_CODES: ReadonlySet<string> = new Set(['E0401']);
+
+const HTTP_UNAUTHORIZED = 401;
+
+/**
+ * Detect an auth failure on any authenticated call: a transport `401` OR an
+ * application-level auth error code (e.g. `E0401`) returned at HTTP 200 (spec
+ * Interfaces; F2-FR4 / F5-FR4 / F8-FR6). Both must be treated equivalently.
+ */
+export function isAuthFailure(httpStatus: number, env: NormalizedEnvelope): boolean {
+  if (httpStatus === HTTP_UNAUTHORIZED) {
+    return true;
+  }
+  return env.errorCode !== undefined && AUTH_ERROR_CODES.has(env.errorCode);
+}

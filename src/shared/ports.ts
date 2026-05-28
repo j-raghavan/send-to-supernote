@@ -112,3 +112,21 @@ export interface KeyValueStore {
   /** All currently-stored keys (used by Disconnect to clear by prefix). */
   keys(): Promise<string[]>;
 }
+
+export type NotifyLevel = 'progress' | 'success' | 'error';
+
+export interface Notification {
+  level: NotifyLevel;
+  title: string;
+  message: string;
+}
+
+/** User-facing notifications (F6-FR5). Real adapter wraps `chrome.notifications`. */
+export interface Notifier {
+  notify(notification: Notification): Promise<void>;
+}
+
+/** Opens the extension's Options page, optionally prefilling an account (F2-FR4). */
+export interface OptionsOpener {
+  open(prefillAccount?: string): Promise<void>;
+}

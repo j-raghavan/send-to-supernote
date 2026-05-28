@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PUBLIC_PROFILE,
   endpointUrl,
+  isAuthFailure,
   normalizeEnvelope,
   privateCloudProfile,
 } from '@domain/delivery';
@@ -101,5 +102,35 @@ describe('normalizeEnvelope', () => {
     const env = normalizeEnvelope({ code: 500 });
     expect(env.success).toBe(false);
     expect(env.errorMsg).toBeUndefined();
+  });
+});
+
+describe('isAuthFailure (F2-FR4)', () => {
+  it('detects a transport 401 regardless of envelope', () => {
+    expect(isAuthFailure(401, normalizeEnvelope({ success: true }))).toBe(true);
+  });
+
+  it('detects an E0401 envelope at HTTP 200', () => {
+    expect(isAuthFailure(200, normalizeEnvelope({ success: false, errorCode: 'E0401' }))).toBe(
+      true,
+    );
+  });
+
+  it('detects an E0401 in a {code} envelope', () => {
+    expect(isAuthFailure(200, normalizeEnvelope({ code: 401, errorCode: 'E0401' }))).toBe(true);
+  });
+
+  it('is false for a successful call', () => {
+    expect(isAuthFailure(200, normalizeEnvelope({ success: true }))).toBe(false);
+  });
+
+  it('is false for a non-auth failure', () => {
+    expect(isAuthFailure(200, normalizeEnvelope({ success: false, errorCode: 'E9999' }))).toBe(
+      false,
+    );
+  });
+
+  it('is false for a non-auth failure with no error code', () => {
+    expect(isAuthFailure(500, normalizeEnvelope({ success: false }))).toBe(false);
   });
 });
