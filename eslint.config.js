@@ -45,6 +45,13 @@ export default tseslint.config(
   {
     files: ['**/*.js', '**/*.mjs', '*.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+      },
+    },
     rules: {
       'no-console': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',

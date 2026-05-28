@@ -11,6 +11,7 @@ CLAUDE.md
 # Build & test artifacts
 node_modules/
 dist/
+artifacts/
 coverage/
 .swarm/
 ruvector.db
