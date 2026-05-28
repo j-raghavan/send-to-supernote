@@ -31,6 +31,7 @@
     "@vitest/coverage-v8": "4.1.7",
     "eslint": "10.4.0",
     "eslint-config-prettier": "10.1.8",
+    "happy-dom": "^20.9.0",
     "prettier": "3.8.3",
     "sinon-chrome": "3.0.1",
     "typescript": "6.0.3",
