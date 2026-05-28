@@ -85,3 +85,17 @@ export interface HttpResponse {
 export interface HttpClient {
   request(req: HttpRequest): Promise<HttpResponse>;
 }
+
+export type LogLevel = 'info' | 'warn' | 'error';
+
+/**
+ * Logger seam. The real adapter scrubs known secret-bearing fields before
+ * writing to the console; the password is never passed here in the first place
+ * (it stays function-local in the login routine — F2-FR2). Tests use a recorder
+ * to assert no secret ever appears in a log line (I-1).
+ */
+export interface Logger {
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+}
