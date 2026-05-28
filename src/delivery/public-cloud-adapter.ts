@@ -20,14 +20,22 @@ import {
   classifyDeliveryFailure,
   type DeliveryFailure,
   endpointUrl,
+  type Folder,
   normalizeEnvelope,
+  parseFolderList,
+  ROOT_DIRECTORY_ID,
 } from '@domain/delivery';
-import type { UploadInput, UploadResult } from './delivery-port';
+import type { DeliveryPort, UploadInput, UploadResult } from './delivery-port';
 
 export const APPLY_PATH = '/file/upload/apply';
 export const FINISH_PATH = '/file/upload/finish';
+export const LIST_PATH = '/file/list/query';
 
 const UNSIGNED_PAYLOAD = 'UNSIGNED-PAYLOAD';
+/** Page size for list/query; folder trees larger than this are paginated (F5-FR3). */
+const LIST_PAGE_SIZE = 100;
+/** Safety bound on pagination so a misbehaving server can't loop forever. */
+const MAX_LIST_PAGES = 50;
 
 export interface PublicCloudDeps {
   http: HttpClient;
@@ -128,4 +136,60 @@ export async function uploadToCloud(
   }
 
   return ok({ fileName: input.fileName, innerName });
+}
+
+/**
+ * List a folder's entries via `/file/list/query`, paginating across `pageNo`
+ * (the page size can truncate large trees — F5-FR3) until fewer than a full page
+ * is returned or `total` is reached. Returns normalized Folder entries.
+ */
+export async function listCloudFolders(
+  deps: PublicCloudDeps,
+  directoryId: string,
+): Promise<Result<Folder[], DeliveryFailure>> {
+  const { http, profile, token } = deps;
+  const all: Folder[] = [];
+
+  for (let pageNo = 1; pageNo <= MAX_LIST_PAGES; pageNo += 1) {
+    const res = await http.request({
+      url: endpointUrl(profile, LIST_PATH),
+      method: 'POST',
+      headers: authHeaders(profile, token),
+      body: { directoryId, pageNo, pageSize: LIST_PAGE_SIZE, order: 'time', sequence: 'desc' },
+    });
+    const env = normalizeEnvelope(res.json);
+    if (!env.success) {
+      return err(classifyDeliveryFailure(res.status, env, 'Could not list folders'));
+    }
+    const page = parseFolderList(env.payload);
+    all.push(...page);
+    const total = typeof env.payload.total === 'number' ? env.payload.total : undefined;
+    const lastPage = page.length < LIST_PAGE_SIZE || (total !== undefined && all.length >= total);
+    if (lastPage) {
+      break;
+    }
+  }
+  return ok(all);
+}
+
+/**
+ * The DeliveryPort implementation for public Supernote Cloud (ADR-0004). Wraps
+ * the upload pipeline and folder listing; healthCheck is a cheap authenticated
+ * root list (F9-FR3).
+ */
+export class PublicCloudAdapter implements DeliveryPort {
+  constructor(private readonly deps: PublicCloudDeps) {}
+
+  uploadDocument(input: UploadInput): Promise<Result<UploadResult, DeliveryFailure>> {
+    return uploadToCloud(this.deps, input);
+  }
+
+  listFolders(directoryId: string): Promise<Result<Folder[], DeliveryFailure>> {
+    return listCloudFolders(this.deps, directoryId);
+  }
+
+  async healthCheck(): Promise<Result<void, DeliveryFailure>> {
+    const result = await listCloudFolders(this.deps, ROOT_DIRECTORY_ID);
+    return result.ok ? ok(undefined) : err(result.error);
+  }
 }

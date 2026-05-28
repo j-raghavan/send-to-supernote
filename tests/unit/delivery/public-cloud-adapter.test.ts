@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   APPLY_PATH,
   FINISH_PATH,
+  LIST_PATH,
+  listCloudFolders,
+  PublicCloudAdapter,
   type PublicCloudDeps,
   uploadToCloud,
 } from '../../../src/delivery/public-cloud-adapter';
@@ -200,5 +203,126 @@ describe('uploadToCloud (F5-FR2)', () => {
     expect(applyHeaders.version).toBe('202407');
     expect(applyHeaders.equipmentNo).toBe('EQ-9');
     expect(applyHeaders.channel).toBe('web');
+  });
+});
+
+describe('listCloudFolders + PublicCloudAdapter (F5-FR3)', () => {
+  it('lists a single page of normalized folders', async () => {
+    const http = new FakeHttpClient().on(LIST_PATH, {
+      status: 200,
+      json: {
+        success: true,
+        total: 2,
+        userFileVOList: [
+          { id: '7', fileName: 'Document', isFolder: true },
+          { id: '8', fileName: 'note.pdf', isFolder: false },
+        ],
+      },
+    });
+    const result = await listCloudFolders(deps(http), '0');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([
+        { id: '7', name: 'Document', isFolder: true },
+        { id: '8', name: 'note.pdf', isFolder: false },
+      ]);
+    }
+    expect(http.requests).toHaveLength(1);
+    expect((http.requests[0]!.body as Record<string, unknown>).pageNo).toBe(1);
+  });
+
+  it('paginates across pages until a short page is returned (F5-FR3 truncation)', async () => {
+    const fullPage = Array.from({ length: 100 }, (_v, i) => ({
+      id: String(i),
+      fileName: `f${i}`,
+      isFolder: false,
+    }));
+    let call = 0;
+    const http = new FakeHttpClient().on(LIST_PATH, () => {
+      call += 1;
+      return call === 1
+        ? { status: 200, json: { success: true, total: 150, userFileVOList: fullPage } }
+        : {
+            status: 200,
+            json: { success: true, total: 150, userFileVOList: fullPage.slice(0, 50) },
+          };
+    });
+    const result = await listCloudFolders(deps(http), '0');
+    expect(result.ok && result.value).toHaveLength(150);
+    expect(http.requests).toHaveLength(2);
+    expect((http.requests[1]!.body as Record<string, unknown>).pageNo).toBe(2);
+  });
+
+  it('routes a list auth failure to an auth DeliveryFailure', async () => {
+    const http = new FakeHttpClient().on(LIST_PATH, {
+      status: 200,
+      json: { success: false, errorCode: 'E0401' },
+    });
+    const result = await listCloudFolders(deps(http), '0');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('auth');
+    }
+  });
+
+  it('the adapter delegates uploadDocument, listFolders, and healthCheck', async () => {
+    const http = new FakeHttpClient();
+    happyPath(http);
+    http.on(LIST_PATH, { status: 200, json: { success: true, total: 0, userFileVOList: [] } });
+    const adapter = new PublicCloudAdapter(deps(http));
+
+    const up = await adapter.uploadDocument(input());
+    expect(up.ok).toBe(true);
+
+    const folders = await adapter.listFolders('0');
+    expect(folders.ok && folders.value).toEqual([]);
+
+    const health = await adapter.healthCheck();
+    expect(health.ok).toBe(true);
+  });
+
+  it('healthCheck surfaces a failure from the root list', async () => {
+    const http = new FakeHttpClient().on(LIST_PATH, {
+      status: 200,
+      json: { success: false, errorCode: 'E0401' },
+    });
+    const adapter = new PublicCloudAdapter(deps(http));
+    const health = await adapter.healthCheck();
+    expect(health.ok).toBe(false);
+    if (!health.ok) {
+      expect(health.error.kind).toBe('auth');
+    }
+  });
+});
+
+describe('listCloudFolders pagination stop conditions (F5-FR3)', () => {
+  it('stops after a full page when total has been reached (no extra page)', () => {
+    const fullPage = Array.from({ length: 100 }, (_v, i) => ({
+      id: String(i),
+      fileName: `f${i}`,
+      isFolder: false,
+    }));
+    const http = new FakeHttpClient().on(LIST_PATH, {
+      status: 200,
+      json: { success: true, total: 100, userFileVOList: fullPage },
+    });
+    return listCloudFolders(deps(http), '0').then((result) => {
+      expect(result.ok && result.value).toHaveLength(100);
+      // Full page but total reached -> exactly one request, no page 2.
+      expect(http.requests).toHaveLength(1);
+    });
+  });
+});
+
+describe('listCloudFolders without a total field (F5-FR3)', () => {
+  it('stops on a short page when the response omits total', () => {
+    const http = new FakeHttpClient().on(LIST_PATH, {
+      status: 200,
+      json: { success: true, userFileVOList: [{ id: '1', fileName: 'Document', isFolder: true }] },
+    });
+    return listCloudFolders(deps(http), '0').then((result) => {
+      expect(result.ok && result.value).toHaveLength(1);
+      expect(http.requests).toHaveLength(1);
+    });
   });
 });

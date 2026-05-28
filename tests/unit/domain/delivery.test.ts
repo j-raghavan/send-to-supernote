@@ -5,8 +5,12 @@ import {
   DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PROFILE,
   endpointUrl,
+  findDocumentFolderId,
   isAuthFailure,
   normalizeEnvelope,
+  normalizeFolderEntry,
+  normalizeIsFolder,
+  parseFolderList,
   privateCloudProfile,
   resolvePublicProfile,
   VIEWER_PUBLIC_PROFILE,
@@ -211,5 +215,79 @@ describe('classifyDeliveryFailure (F5-FR4)', () => {
   it('uses a default auth message when none is provided', () => {
     const f = classifyDeliveryFailure(401, normalizeEnvelope({ success: false }), 'fallback');
     expect(f.message).toBe('Session expired');
+  });
+});
+
+describe('folder normalization (F5-FR3 / F7-FR2)', () => {
+  it('normalizes a boolean isFolder (public)', () => {
+    expect(normalizeIsFolder(true)).toBe(true);
+    expect(normalizeIsFolder(false)).toBe(false);
+  });
+
+  it('normalizes the string "Y"/"N" isFolder (private)', () => {
+    expect(normalizeIsFolder('Y')).toBe(true);
+    expect(normalizeIsFolder('y')).toBe(true);
+    expect(normalizeIsFolder('N')).toBe(false);
+  });
+
+  it('treats any other isFolder value as false', () => {
+    expect(normalizeIsFolder(undefined)).toBe(false);
+    expect(normalizeIsFolder(1)).toBe(false);
+  });
+
+  it('normalizes a folder entry with a string id', () => {
+    expect(
+      normalizeFolderEntry({ id: '778507258773372928', fileName: 'Document', isFolder: 'Y' }),
+    ).toEqual({ id: '778507258773372928', name: 'Document', isFolder: true });
+  });
+
+  it('coerces a numeric id to a string', () => {
+    expect(normalizeFolderEntry({ id: 42, fileName: 'A', isFolder: true })).toEqual({
+      id: '42',
+      name: 'A',
+      isFolder: true,
+    });
+  });
+
+  it('rejects an entry missing id or name', () => {
+    expect(normalizeFolderEntry({ fileName: 'A' })).toBeUndefined();
+    expect(normalizeFolderEntry({ id: '1' })).toBeUndefined();
+    expect(normalizeFolderEntry('not-an-object')).toBeUndefined();
+  });
+
+  it('parses a userFileVOList, dropping malformed entries', () => {
+    const folders = parseFolderList({
+      userFileVOList: [
+        { id: '1', fileName: 'Document', isFolder: true },
+        { fileName: 'broken' },
+        { id: '2', fileName: 'note.pdf', isFolder: false },
+      ],
+    });
+    expect(folders).toEqual([
+      { id: '1', name: 'Document', isFolder: true },
+      { id: '2', name: 'note.pdf', isFolder: false },
+    ]);
+  });
+
+  it('returns no folders when userFileVOList is absent or not an array', () => {
+    expect(parseFolderList({})).toEqual([]);
+    expect(parseFolderList({ userFileVOList: 'nope' })).toEqual([]);
+  });
+
+  it('finds the Document/ folder id among entries', () => {
+    expect(
+      findDocumentFolderId([
+        { id: '9', name: 'Inbox', isFolder: true },
+        { id: '7', name: 'Document', isFolder: true },
+      ]),
+    ).toBe('7');
+  });
+
+  it('ignores a non-folder named Document', () => {
+    expect(findDocumentFolderId([{ id: '5', name: 'Document', isFolder: false }])).toBeUndefined();
+  });
+
+  it('returns undefined when there is no Document folder', () => {
+    expect(findDocumentFolderId([{ id: '1', name: 'Other', isFolder: true }])).toBeUndefined();
   });
 });

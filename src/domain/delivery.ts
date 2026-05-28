@@ -171,6 +171,58 @@ export interface Folder {
   isFolder: boolean;
 }
 
+/** The Document/ folder name both targets resolve their default destination from. */
+export const DOCUMENT_FOLDER_NAME = 'Document';
+
+/** Root directory id (both targets use "0"). */
+export const ROOT_DIRECTORY_ID = '0';
+
+/**
+ * Normalize an `isFolder` value across targets: public Cloud uses a boolean,
+ * Private Cloud uses the string `"Y"`/`"N"` (Interfaces). Anything else is false.
+ */
+export function normalizeIsFolder(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return value === 'Y' || value === 'y';
+}
+
+/**
+ * Normalize a raw `list/query` entry into a Folder. Returns undefined when the
+ * id/name are missing/ill-typed (defensive against breakable shapes — R-1).
+ */
+export function normalizeFolderEntry(raw: unknown): Folder | undefined {
+  const entry = asRecord(raw);
+  const id = entry.id;
+  const name = entry.fileName;
+  if ((typeof id !== 'string' && typeof id !== 'number') || typeof name !== 'string') {
+    return undefined;
+  }
+  return { id: String(id), name, isFolder: normalizeIsFolder(entry.isFolder) };
+}
+
+/** Parse a `userFileVOList` payload into normalized Folder entries. */
+export function parseFolderList(payload: Record<string, unknown>): Folder[] {
+  const list = payload.userFileVOList;
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  const folders: Folder[] = [];
+  for (const raw of list) {
+    const folder = normalizeFolderEntry(raw);
+    if (folder !== undefined) {
+      folders.push(folder);
+    }
+  }
+  return folders;
+}
+
+/** Find the id of the `Document/` folder among listed entries, if present. */
+export function findDocumentFolderId(folders: readonly Folder[]): string | undefined {
+  return folders.find((f) => f.isFolder && f.name === DOCUMENT_FOLDER_NAME)?.id;
+}
+
 /** Outcome category for any delivery step, so call sites branch uniformly. */
 export type DeliveryFailureKind = 'auth' | 'not-found' | 'connection' | 'protocol';
 
