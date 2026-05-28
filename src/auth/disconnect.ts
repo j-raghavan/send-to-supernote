@@ -8,7 +8,7 @@
  * both targets. Pending-job clearing is delegated to an optional hook (F9).
  */
 import type { KeyValueStore } from '@shared/ports';
-import { PUBLIC_CLOUD_KEYS } from '@shared/storage-keys';
+import { PRIVATE_CLOUD_KEYS, PUBLIC_CLOUD_KEYS } from '@shared/storage-keys';
 
 export interface DisconnectDeps {
   store: KeyValueStore;
@@ -29,4 +29,13 @@ export async function disconnect(deps: DisconnectDeps, keys: readonly string[]):
 /** Disconnect the public Supernote Cloud account (F2-FR5). */
 export function disconnectPublicCloud(deps: DisconnectDeps): Promise<void> {
   return disconnect(deps, PUBLIC_CLOUD_KEYS);
+}
+
+/**
+ * Disconnect the Private Cloud server (F8-FR5): remove the JWT + account and
+ * clear PC pending jobs. The base URL is intentionally kept so the re-connect
+ * form can prefill it without re-typing.
+ */
+export function disconnectPrivateCloud(deps: DisconnectDeps): Promise<void> {
+  return disconnect(deps, PRIVATE_CLOUD_KEYS);
 }
