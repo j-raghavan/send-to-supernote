@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PROFILE,
   endpointUrl,
   isAuthFailure,
   normalizeEnvelope,
   privateCloudProfile,
+  resolvePublicProfile,
+  VIEWER_PUBLIC_PROFILE,
 } from '@domain/delivery';
 
 describe('ApiProfile (R-8 / ADR-0003)', () => {
@@ -19,6 +22,24 @@ describe('ApiProfile (R-8 / ADR-0003)', () => {
     expect(profile.baseUrl).toBe('http://192.168.50.168:8080');
     expect(profile.pathPrefix).toBe('/api');
     expect(profile.usesCodeEnvelope).toBe(true);
+  });
+});
+
+describe('resolvePublicProfile (F5-FR1 / R-8)', () => {
+  it('defaults to the cloud host', () => {
+    expect(DEFAULT_PUBLIC_HOST).toBe('cloud');
+    expect(resolvePublicProfile()).toBe(DEFAULT_PUBLIC_PROFILE);
+  });
+
+  it('resolves the cloud host to the default profile (no extra headers)', () => {
+    expect(resolvePublicProfile('cloud')).toBe(DEFAULT_PUBLIC_PROFILE);
+    expect(resolvePublicProfile('cloud').headers).toEqual({});
+  });
+
+  it('resolves the viewer host to the viewer profile with the version header', () => {
+    expect(resolvePublicProfile('viewer')).toBe(VIEWER_PUBLIC_PROFILE);
+    expect(VIEWER_PUBLIC_PROFILE.baseUrl).toBe('https://viewer.supernote.com');
+    expect(VIEWER_PUBLIC_PROFILE.headers.version).toBe('202407');
   });
 });
 

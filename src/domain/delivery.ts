@@ -33,13 +33,43 @@ export interface ApiProfile {
   usesCodeEnvelope: boolean;
 }
 
-/** Default public Cloud profile (host pinned by the F5-FR1 spike; this is the assumption). */
+/**
+ * Candidate public-API hosts (R-8). The F5-FR1 spike pins which one the user's
+ * account actually accepts; both are declared statically in the manifest
+ * (F1-FR3) and the resolved choice is stored under `supernote.apiHost`.
+ */
+export type PublicHost = 'cloud' | 'viewer';
+
+export const DEFAULT_PUBLIC_HOST: PublicHost = 'cloud';
+
+/**
+ * Default public Cloud profile (`cloud.supernote.com`, no extra headers). This
+ * is the working assumption; the F5-FR1 spike confirms or switches it to the
+ * `viewer` profile. Host pinned by the spike — never hardcoded in logic.
+ */
 export const DEFAULT_PUBLIC_PROFILE: ApiProfile = {
   baseUrl: 'https://cloud.supernote.com',
   pathPrefix: '',
   headers: {},
   usesCodeEnvelope: false,
 };
+
+/**
+ * The `viewer.supernote.com` profile variant, which reference clients reach with
+ * extra headers (`version`/`equipmentNo`/`channel` — R-8). The exact `version`
+ * is a spike output; this carries the reference value as a configurable default.
+ */
+export const VIEWER_PUBLIC_PROFILE: ApiProfile = {
+  baseUrl: 'https://viewer.supernote.com',
+  pathPrefix: '',
+  headers: { version: '202407' },
+  usesCodeEnvelope: false,
+};
+
+/** Resolve the public profile for a pinned host (defaulting to `cloud`). */
+export function resolvePublicProfile(host: PublicHost = DEFAULT_PUBLIC_HOST): ApiProfile {
+  return host === 'viewer' ? VIEWER_PUBLIC_PROFILE : DEFAULT_PUBLIC_PROFILE;
+}
 
 /** Build a Private Cloud profile for a user-configured base URL (F8). */
 export function privateCloudProfile(baseUrl: string): ApiProfile {
