@@ -9,7 +9,13 @@
  */
 import type { HttpClient, RandomSource } from '@shared/ports';
 import { err, ok, type Result } from '@shared/result';
-import { type ApiProfile, endpointUrl, normalizeEnvelope } from '@domain/delivery';
+import {
+  type ApiProfile,
+  endpointUrl,
+  isAuthFailure,
+  type NormalizedEnvelope,
+  normalizeEnvelope,
+} from '@domain/delivery';
 import {
   type CountryCode,
   DEFAULT_COUNTRY_CODE,
@@ -78,7 +84,7 @@ export async function performLogin(
   const nonceEnv = normalizeEnvelope(nonceRes.json);
   const nonce = nonceEnv.payload as NoncePayload;
   if (!nonceEnv.success || typeof nonce.randomCode !== 'string') {
-    return err(toError(nonceEnv.errorCode, nonceEnv.errorMsg, 'nonce request failed'));
+    return err(toError(nonceRes.status, nonceEnv, 'nonce request failed'));
   }
   const randomCode = nonce.randomCode;
   const timestamp = typeof nonce.timestamp === 'number' ? nonce.timestamp : undefined;
@@ -106,8 +112,11 @@ export async function performLogin(
   const loginEnv = normalizeEnvelope(loginRes.json);
   const token = loginEnv.payload.token;
   if (!loginEnv.success || typeof token !== 'string' || token.length === 0) {
-    const kind: LoginErrorKind =
-      loginEnv.errorCode === 'E0401' ? 'auth-failed' : 'unexpected-response';
+    // Classify via the shared isAuthFailure primitive (transport 401 OR E0401),
+    // so a bare transport-401 login is auth-failed too (DRY with F2-FR4/F5/F8).
+    const kind: LoginErrorKind = isAuthFailure(loginRes.status, loginEnv)
+      ? 'auth-failed'
+      : 'unexpected-response';
     return err({
       kind,
       ...(loginEnv.errorCode !== undefined ? { errorCode: loginEnv.errorCode } : {}),
@@ -132,14 +141,10 @@ function buildHeaders(profile: ApiProfile): Record<string, string> {
   return headers;
 }
 
-function toError(
-  errorCode: string | undefined,
-  errorMsg: string | undefined,
-  fallback: string,
-): LoginError {
+function toError(httpStatus: number, env: NormalizedEnvelope, fallback: string): LoginError {
   return {
-    kind: errorCode === 'E0401' ? 'auth-failed' : 'unexpected-response',
-    ...(errorCode !== undefined ? { errorCode } : {}),
-    message: errorMsg ?? fallback,
+    kind: isAuthFailure(httpStatus, env) ? 'auth-failed' : 'unexpected-response',
+    ...(env.errorCode !== undefined ? { errorCode: env.errorCode } : {}),
+    message: env.errorMsg ?? fallback,
   };
 }

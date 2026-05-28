@@ -143,6 +143,22 @@ describe('performLogin (F2-FR0)', () => {
     }
   });
 
+  it('maps a bare transport-401 login response to auth-failed (no E0401 in envelope)', async () => {
+    http
+      .on(NONCE_PATH, { status: 200, json: { success: true, randomCode: 'C' } })
+      .on(LOGIN_PATH, { status: 401, json: {} });
+
+    const result = await performLogin(deps(http), {
+      profile: DEFAULT_PUBLIC_PROFILE,
+      account: 'a@b.com',
+      password: 'pw',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('auth-failed');
+    }
+  });
+
   it('fails with auth-failed on an E0401 login envelope (bad credentials)', async () => {
     http.on(NONCE_PATH, { status: 200, json: { success: true, randomCode: 'C' } }).on(LOGIN_PATH, {
       status: 200,
