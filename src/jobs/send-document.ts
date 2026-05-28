@@ -23,13 +23,22 @@ import { type Target } from '@domain/settings';
 import { type DeliveryFailure, findDocumentFolderId, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
 import { buildUploadFilename } from '@shared/filename';
-import type { DeliveryPort, UploadResult } from '@delivery/delivery-port';
+import type { DeliveryPort } from '@delivery/delivery-port';
 import { type DeliveryOutcome, routeDeliveryFailure } from '@delivery/route-delivery-failure';
 import type { AuthFailureDeps } from '@auth/handle-auth-failure';
 import { type CaptureError, type CaptureReaderDeps, captureReader } from '@capture/capture-reader';
 import { type CaptureFullPageDeps, captureFullPage } from '@capture/capture-fullpage';
 import { captureErrorNotification } from '@capture/capture-error-notification';
 import { type RenderDeps, renderDocument } from '@conversion/render-document';
+import {
+  NOTE_CAPTURING,
+  NOTE_CONNECT_FIRST,
+  NOTE_CONVERTING,
+  noteConversionFailed,
+  noteSendFailed,
+  noteSent,
+  noteUploading,
+} from './send-notifications';
 
 /** Active-tab metadata the saga needs that lives outside the captured document. */
 export interface PageContext {
@@ -90,13 +99,13 @@ export async function sendDocument(
   // queued -> ensure token
   await deps.badge.set('busy');
   if (!(await deps.hasToken(req.target))) {
-    await notify(deps, 'error', 'Connect first', 'Connect your Supernote account in Options.');
+    await deps.notifier.notify(NOTE_CONNECT_FIRST);
     await deps.badge.set('error');
     return fail('not-connected', 'Not connected', 'failed');
   }
 
   // capturing
-  await notify(deps, 'progress', 'Capturing', 'Capturing the page…');
+  await deps.notifier.notify(NOTE_CAPTURING);
   const captured = await capture(deps, req.mode);
   if (!captured.ok) {
     await deps.notifier.notify(captureErrorNotification(captured.error));
@@ -105,13 +114,13 @@ export async function sendDocument(
   }
 
   // converting
-  await notify(deps, 'progress', 'Converting', 'Building the document…');
+  await deps.notifier.notify(NOTE_CONVERTING);
   const rendered = await renderDocument(deps.render, {
     document: captured.value,
     format: req.format,
   });
   if (!rendered.ok) {
-    await notify(deps, 'error', 'Conversion failed', rendered.error.message);
+    await deps.notifier.notify(noteConversionFailed(rendered.error.message));
     await deps.badge.set('error');
     return fail('render', rendered.error.message, 'failed');
   }
@@ -119,7 +128,7 @@ export async function sendDocument(
   // hashing: read bytes back from the blob handle (F1-FR6)
   const stored = await deps.blobs.get(rendered.value.handle);
   if (stored === undefined) {
-    await notify(deps, 'error', 'Conversion failed', 'The rendered document was lost.');
+    await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
     await deps.badge.set('error');
     return fail('render', 'Rendered blob missing', 'failed');
   }
@@ -131,7 +140,7 @@ export async function sendDocument(
   const fileName = await resolveFileName(deps, req, port, destination, captured.value);
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
-  await notify(deps, 'progress', 'Uploading', `Sending ${fileName}…`);
+  await deps.notifier.notify(noteUploading(fileName));
   const uploaded = await port.uploadDocument({
     bytes: stored.bytes,
     contentType: contentTypeFor(req.format),
@@ -146,12 +155,7 @@ export async function sendDocument(
   // finish verified by the adapter -> drive the FSM to done (I-3)
   const finalState = completeFinish('finishing', true);
   await cleanupBlob(deps, rendered.value.handle);
-  await notify(
-    deps,
-    'success',
-    'Sent to Supernote',
-    `${displayName(uploaded.value)} — sync your device to see it.`,
-  );
+  await deps.notifier.notify(noteSent(uploaded.value.fileName));
   await deps.badge.set('idle');
   return ok({ fileName: uploaded.value.fileName, state: finalState as 'done' });
 }
@@ -213,7 +217,7 @@ async function finishDeliveryFailure(
     await deps.badge.set('expired');
     return fail('auth', 'Session expired — reconnect to retry', 'failed');
   }
-  await notify(deps, 'error', 'Send failed', failure.message);
+  await deps.notifier.notify(noteSendFailed(failure.message));
   await deps.badge.set('error');
   return {
     ok: false,
@@ -223,19 +227,6 @@ async function finishDeliveryFailure(
 
 async function cleanupBlob(deps: SendDocumentDeps, handle: string): Promise<void> {
   await deps.blobs.delete(handle);
-}
-
-function displayName(result: UploadResult): string {
-  return result.fileName;
-}
-
-function notify(
-  deps: SendDocumentDeps,
-  level: 'progress' | 'success' | 'error',
-  title: string,
-  message: string,
-): Promise<void> {
-  return deps.notifier.notify({ level, title, message });
 }
 
 function fail(kind: SendErrorKind, message: string, state: JobState): Result<never, SendError> {
