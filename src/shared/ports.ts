@@ -99,3 +99,16 @@ export interface Logger {
   warn(message: string, context?: Record<string, unknown>): void;
   error(message: string, context?: Record<string, unknown>): void;
 }
+
+/**
+ * Key-value persistence. The real adapter is backed by `chrome.storage.local`
+ * ONLY — never `chrome.storage.sync` (I-5/D-2: secrets must not propagate across
+ * machines). Tests use an in-memory map implementing the same port.
+ */
+export interface KeyValueStore {
+  get<T>(key: string): Promise<T | undefined>;
+  set<T>(key: string, value: T): Promise<void>;
+  remove(key: string): Promise<void>;
+  /** All currently-stored keys (used by Disconnect to clear by prefix). */
+  keys(): Promise<string[]>;
+}

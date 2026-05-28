@@ -39,7 +39,6 @@ type Sink = (message: string, context?: Record<string, unknown>) => void;
 export class ScrubbingLogger implements Logger {
   constructor(
     private readonly sinks: Record<LogLevel, Sink> = {
-      // eslint-disable-next-line no-console
       info: (m, c) => (c ? console.warn(m, c) : console.warn(m)),
       warn: (m, c) => (c ? console.warn(m, c) : console.warn(m)),
       error: (m, c) => (c ? console.error(m, c) : console.error(m)),
