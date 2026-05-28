@@ -16,6 +16,7 @@ import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
+import { PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from './privacy-copy';
 import {
   buildOptionsView,
   parseFormatChange,
@@ -85,6 +86,20 @@ async function render(): Promise<void> {
 
   if (view.canPickCloudFolder) {
     await renderFolderPicker(current.target);
+  }
+
+  renderPrivacy();
+}
+
+/** Wire the Privacy Policy link + "password never stored" statement (F7-FR5). */
+function renderPrivacy(): void {
+  const link = byId<HTMLAnchorElement>('privacy-link');
+  if (link) {
+    link.href = PRIVACY_POLICY_URL;
+  }
+  const note = document.querySelector('#connection .note');
+  if (note) {
+    note.textContent = PASSWORD_NEVER_STORED;
   }
 }
 
