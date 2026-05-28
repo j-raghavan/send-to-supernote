@@ -130,3 +130,11 @@ export interface Notifier {
 export interface OptionsOpener {
   open(prefillAccount?: string): Promise<void>;
 }
+
+/** Toolbar badge visual states (F2-FR6 / F6-FR5). */
+export type BadgeState = 'idle' | 'busy' | 'error' | 'expired';
+
+/** Sets the toolbar action badge. Real adapter wraps `chrome.action`. */
+export interface Badge {
+  set(state: BadgeState): Promise<void>;
+}

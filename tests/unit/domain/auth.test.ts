@@ -1,6 +1,6 @@
 import { webcrypto } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_COUNTRY_CODE, loginHash } from '@domain/auth';
+import { badgeStateFor, DEFAULT_COUNTRY_CODE, loginHash } from '@domain/auth';
 import { md5hex } from '@shared/md5';
 
 /** Real lowercase-hex SHA-256, mirroring the WebCrypto adapter used in prod. */
@@ -39,5 +39,29 @@ describe('loginHash (F2-FR3)', () => {
 describe('CountryCode', () => {
   it('defaults to "1" (US) per R-7', () => {
     expect(DEFAULT_COUNTRY_CODE).toBe('1');
+  });
+});
+
+describe('badgeStateFor (F2-FR6)', () => {
+  it('maps expired to the expired badge regardless of job activity', () => {
+    expect(badgeStateFor('expired')).toBe('expired');
+    expect(badgeStateFor('expired', true)).toBe('expired');
+  });
+
+  it('maps an in-flight job to busy when connected', () => {
+    expect(badgeStateFor('connected', true)).toBe('busy');
+  });
+
+  it('maps connected + idle to the idle badge', () => {
+    expect(badgeStateFor('connected', false)).toBe('idle');
+    expect(badgeStateFor('connected')).toBe('idle');
+  });
+
+  it('maps disconnected to the error badge when idle', () => {
+    expect(badgeStateFor('disconnected')).toBe('error');
+  });
+
+  it('prefers busy over the disconnected error badge when a job is in flight', () => {
+    expect(badgeStateFor('disconnected', true)).toBe('busy');
   });
 });

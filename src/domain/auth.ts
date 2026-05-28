@@ -39,3 +39,27 @@ export async function loginHash(
   const inner = md5hex(password);
   return sha256hex(inner + randomCode);
 }
+
+/** Connection state shown in the popup and reflected on the toolbar badge (F2-FR6). */
+export type SessionState = 'connected' | 'expired' | 'disconnected';
+
+/** Toolbar badge state, mirrored from ports to keep the mapping in the domain. */
+export type BadgeState = 'idle' | 'busy' | 'error' | 'expired';
+
+/**
+ * Map a session state (and whether a send job is in flight) to a badge state
+ * (F2-FR6 / F6-FR5). A busy job takes precedence over the idle/connected badge;
+ * an expired session always shows the expired badge.
+ */
+export function badgeStateFor(session: SessionState, jobInFlight = false): BadgeState {
+  if (session === 'expired') {
+    return 'expired';
+  }
+  if (jobInFlight) {
+    return 'busy';
+  }
+  if (session === 'disconnected') {
+    return 'error';
+  }
+  return 'idle';
+}

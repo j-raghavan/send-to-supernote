@@ -12,8 +12,7 @@
  * the same routine serves both public Cloud (F2) and Private Cloud (F8-FR6).
  */
 import type { Notifier, OptionsOpener } from '@shared/ports';
-
-export type SessionState = 'connected' | 'expired' | 'disconnected';
+import type { SessionState } from '@domain/auth';
 
 export interface AuthFailureDeps {
   clearToken: () => Promise<void>;
