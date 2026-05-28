@@ -31,6 +31,20 @@ function hasStorageSync(source: string): boolean {
   return SYNC_RE.test(stripComments(source));
 }
 
+/**
+ * Hardened sole-fetch predicate (F10-FR5): the bare form OR the qualified global
+ * forms globalThis/window/self.fetch — byte-identical to sole-fetch.test.ts.
+ */
+const QUALIFIED_FETCH_RE = /\b(?:globalThis|window|self)\.fetch\s*\(/;
+function hasAnyGlobalFetch(source: string): boolean {
+  const code = stripComments(source);
+  return FETCH_RE.test(code) || QUALIFIED_FETCH_RE.test(code);
+}
+
+/** no-remote-code predicates (F10-FR4) — remote <script src> and URL import(). */
+const REMOTE_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\//i;
+const REMOTE_IMPORT_RE = /\bimport\s*\(\s*["'](?:https?:)?\/\//i;
+
 describe('sole-fetch guard has teeth (I-2/D-3 negative control)', () => {
   it('FAILS-detects a newly introduced bare fetch( call site', () => {
     // A hypothetical second adapter that leaks a direct global fetch.
@@ -73,5 +87,48 @@ describe('no-storage-sync guard has teeth (I-5 negative control)', () => {
 
   it('does NOT trip on a .sync reference that only appears in a comment', () => {
     expect(hasStorageSync('// never use chrome.storage.sync for secrets\nuseLocal();')).toBe(false);
+  });
+});
+
+describe('hardened sole-fetch guard has teeth (F10-FR5 — globalThis/window/self.fetch)', () => {
+  it('FAILS-detects the qualified global forms the hardening added', () => {
+    expect(hasAnyGlobalFetch('return globalThis.fetch(u);')).toBe(true);
+    expect(hasAnyGlobalFetch('return window.fetch(u);')).toBe(true);
+    expect(hasAnyGlobalFetch('return self.fetch(u);')).toBe(true);
+  });
+
+  it('still detects the bare form', () => {
+    expect(hasAnyGlobalFetch('return fetch(u);')).toBe(true);
+  });
+
+  it('does NOT trip on an unrelated member .fetch (e.g. client.fetch)', () => {
+    expect(hasAnyGlobalFetch('client.fetch(url)')).toBe(false);
+  });
+
+  it('ACCEPTED residual: an exotic dynamic form evades the static scan', () => {
+    // Documented in docs/SECURITY-REVIEW.md §6.1 — covered by the single-adapter
+    // convention + review, not by the static guard. This pins the known limit.
+    expect(hasAnyGlobalFetch("const f = globalThis['fet'+'ch']; f(u);")).toBe(false);
+  });
+});
+
+describe('no-remote-code guard has teeth (F10-FR4 negative control)', () => {
+  it('FAILS-detects a remote <script src> (https / protocol-relative)', () => {
+    expect(REMOTE_SCRIPT_RE.test('<script src="https://cdn.example.com/x.js"></script>')).toBe(
+      true,
+    );
+    expect(REMOTE_SCRIPT_RE.test('<script src="//cdn.example.com/x.js"></script>')).toBe(true);
+  });
+
+  it('does NOT trip on a bundled relative <script src>', () => {
+    expect(REMOTE_SCRIPT_RE.test('<script type="module" src="./options.ts"></script>')).toBe(false);
+  });
+
+  it('FAILS-detects a dynamic import() of a remote URL', () => {
+    expect(REMOTE_IMPORT_RE.test('await import("https://cdn.example.com/x.js")')).toBe(true);
+  });
+
+  it('does NOT trip on a bundled module-specifier import()', () => {
+    expect(REMOTE_IMPORT_RE.test("await import('jspdf')")).toBe(false);
   });
 });
