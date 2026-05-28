@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [master, feat/mvp]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Quality gate (the same `check` the team gated every commit on):
+      # eslint + prettier --check + tsc --noEmit + vitest run --coverage (>=97%).
+      - name: Quality gate (lint, format, typecheck, coverage)
+        run: npm run check
+
+      # Sanity: the extension must produce a loadable MV3 dist/.
+      - name: Build (loadable dist sanity check)
+        run: npm run build
+
+      - name: Verify built manifest is MV3
+        run: |
+          test "$(jq -r '.manifest_version' dist/manifest.json)" = "3"
+          echo "dist manifest v$(jq -r '.version' dist/manifest.json) (MV$(jq -r '.manifest_version' dist/manifest.json))"
+
+      - name: Upload coverage report
+        if: matrix.node-version == '22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14

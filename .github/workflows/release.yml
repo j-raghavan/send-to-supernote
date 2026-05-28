@@ -1,0 +1,108 @@
+name: Release
+
+# Triggered by pushing a SemVer tag created with `npm version`:
+#   npm version <patch|minor|major>   # bumps package.json (the single version
+#                                      # source) + commits + creates tag vX.Y.Z
+#   git push --follow-tags
+# The manifest version is sourced from package.json (manifest.config.ts), so the
+# built dist/ and the tag stay in sync; this workflow enforces that.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write # create the GitHub Release + upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, package, and publish release artifacts
+    runs-on: ubuntu-latest
+    env:
+      # Optional: a PEM RSA private key (Settings > Secrets > Actions). When set,
+      # a signed CRX is produced for self-hosting/QA. The Chrome Web Store upload
+      # uses the ZIP, not the CRX. The key determines the extension ID — keep it
+      # stable and secret; never commit it.
+      CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+    steps:
+      - name: Checkout (the tagged commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve and validate version (SemVer + Chrome constraints)
+        id: ver
+        run: |
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${REF#refs/tags/}"
+          VER="${TAG#v}"
+          PKG="$(jq -r '.version' package.json)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Release tag=$TAG  version=$VER  package.json=$PKG"
+          if [ "$VER" != "$PKG" ]; then
+            echo "::error::Tag version ($VER) != package.json version ($PKG). Bump with 'npm version <patch|minor|major>' (it also creates the tag), then 'git push --follow-tags'."
+            exit 1
+          fi
+          if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Chrome manifest versions must be numeric MAJOR.MINOR.PATCH (got '$VER'); SemVer pre-release/build suffixes are not allowed for store builds."
+            exit 1
+          fi
+
+      - name: Quality gate (lint, format, typecheck, coverage >=97%)
+        run: npm run check
+
+      - name: Build + zip
+        run: npm run package
+
+      - name: Verify built manifest matches the release version
+        run: |
+          DIST_VER="$(jq -r '.version' dist/manifest.json)"
+          if [ "$DIST_VER" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::dist/manifest.json version ($DIST_VER) != release version (${{ steps.ver.outputs.version }})"
+            exit 1
+          fi
+          cp artifacts/send-to-supernote.zip "artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip"
+
+      - name: Build signed CRX (only when CRX_PRIVATE_KEY is configured)
+        if: env.CRX_PRIVATE_KEY != ''
+        env:
+          CRX_OUT: artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+        run: npm run crx
+
+      - name: Upload build artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: send-to-supernote-${{ steps.ver.outputs.version }}
+          path: |
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: v${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
