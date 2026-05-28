@@ -54,6 +54,13 @@ function findChrome() {
   return null;
 }
 
+function copyToClipboard(text) {
+  if (platform() !== 'darwin') return;
+  const p = spawn('pbcopy', { stdio: ['pipe', 'ignore', 'ignore'] });
+  p.on('error', () => undefined); // pbcopy unavailable — clipboard copy is best-effort
+  p.stdin.end(text);
+}
+
 function main() {
   if (!existsSync(distDir)) {
     console.error(
@@ -83,14 +90,24 @@ function main() {
   }
 
   console.log(`Launching: ${bin}`);
-  console.log(`  extension: ${distDir}`);
-  console.log(`  dev profile: ${profileDir}`);
   const child = spawn(bin, args, { detached: true, stdio: 'ignore' });
   child.on('error', (err) => {
     console.error(`Failed to launch Chrome: ${err.message}`);
     process.exit(1);
   });
   child.unref();
+
+  // Recent Chrome (2025+) silently ignores --load-extension, so guide the user
+  // through the reliable Load-unpacked step and put the path on the clipboard.
+  copyToClipboard(distDir);
+  console.log('');
+  console.log('Chrome opened at chrome://extensions (fresh dev profile).');
+  console.log('If the extension is NOT listed (recent Chrome ignores --load-extension):');
+  console.log('  1. Ensure "Developer mode" (top-right) is ON.');
+  console.log('  2. Click "Load unpacked".');
+  console.log('  3. Select this folder (already copied to your clipboard on macOS):');
+  console.log(`       ${distDir}`);
+  console.log('  4. Click the puzzle-piece icon and pin "Send to Supernote".');
 }
 
 main();
