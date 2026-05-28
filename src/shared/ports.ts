@@ -10,6 +10,7 @@
  * the single home for all of them.
  */
 import type { FullPageExtract, ReaderExtract } from '@domain/capture';
+import type { RenderOptions } from '@domain/conversion';
 
 /** Reasons the offscreen document may be created (subset we use). */
 export type OffscreenReason = 'DOM_PARSER' | 'BLOBS' | 'IFRAME_SCRIPTING';
@@ -151,4 +152,21 @@ export interface Extractor {
   extractReader(): Promise<ReaderExtract>;
   /** Serialize the rendered page + relevant computed styles (F4-FR2). */
   serializeFullPage(): Promise<FullPageExtract>;
+}
+
+/** Result of a render: a handle to the stored blob plus its byte size. */
+export interface RenderedBlob {
+  handle: BlobHandle;
+  contentType: string;
+  size: number;
+}
+
+/**
+ * Render captured HTML to a PDF/EPUB blob (F3-FR2/FR3, F4-FR2). The real adapter
+ * runs in the offscreen document (jsPDF/html2canvas/jszip), stores the bytes via
+ * BlobTransfer, and returns a handle (F1-FR6). Tests inject a fake returning a
+ * canned handle so the conversion use case is pure-testable.
+ */
+export interface Renderer {
+  render(html: string, options: RenderOptions): Promise<RenderedBlob>;
 }
