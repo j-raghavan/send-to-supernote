@@ -141,6 +141,11 @@ export interface Badge {
   set(state: BadgeState): Promise<void>;
 }
 
+/** Wall-clock source, injected so time-dependent logic (filename date, TTL) is deterministic. */
+export interface Clock {
+  now(): number;
+}
+
 /**
  * Page-content extraction (F3/F4). The real adapters run in the content script
  * against a DOM CLONE for Reader (never mutating the live page — I-4) and

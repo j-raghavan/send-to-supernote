@@ -6,6 +6,12 @@ export default defineConfig({
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
       '@domain': fileURLToPath(new URL('./src/domain', import.meta.url)),
+      '@auth': fileURLToPath(new URL('./src/auth', import.meta.url)),
+      '@capture': fileURLToPath(new URL('./src/capture', import.meta.url)),
+      '@conversion': fileURLToPath(new URL('./src/conversion', import.meta.url)),
+      '@delivery': fileURLToPath(new URL('./src/delivery', import.meta.url)),
+      '@settings': fileURLToPath(new URL('./src/settings', import.meta.url)),
+      '@jobs': fileURLToPath(new URL('./src/jobs', import.meta.url)),
     },
   },
   test: {

@@ -21,7 +21,13 @@
     "useDefineForClassFields": true,
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@domain/*": ["./src/domain/*"]
+      "@domain/*": ["./src/domain/*"],
+      "@auth/*": ["./src/auth/*"],
+      "@capture/*": ["./src/capture/*"],
+      "@conversion/*": ["./src/conversion/*"],
+      "@delivery/*": ["./src/delivery/*"],
+      "@settings/*": ["./src/settings/*"],
+      "@jobs/*": ["./src/jobs/*"]
     }
   },
   "include": ["src", "tests", "*.config.ts", "scripts"],
