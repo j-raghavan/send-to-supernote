@@ -20,6 +20,7 @@ interface Harness {
   badge: FakeBadge;
   blobs: InMemoryBlobTransfer;
   tokens: TokenStore;
+  options: FakeOptionsOpener;
 }
 
 const ARTICLE = {
@@ -47,6 +48,7 @@ async function harness(opts: { connected?: boolean } = {}): Promise<Harness> {
   const notifier = new FakeNotifier();
   const badge = new FakeBadge();
   const blobs = new InMemoryBlobTransfer(new FakeRandomSource());
+  const options = new FakeOptionsOpener();
   const deps: SendDocumentDeps = {
     resolveDelivery: () => port,
     capture: {
@@ -61,13 +63,14 @@ async function harness(opts: { connected?: boolean } = {}): Promise<Harness> {
     badge,
     clock: new FakeClock(Date.UTC(2026, 4, 28)),
     hasToken: async (_t: Target) => (await tokens.getToken()) !== undefined,
+    account: 'me@x.com',
     authDeps: {
       clearToken: () => tokens.clearToken(),
       notifier,
-      options: new FakeOptionsOpener(),
+      options,
     },
   };
-  return { deps, port, notifier, badge, blobs, tokens };
+  return { deps, port, notifier, badge, blobs, tokens, options };
 }
 
 describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
@@ -216,6 +219,8 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     }
     expect(await h.tokens.getToken()).toBeUndefined();
     expect(h.badge.current).toBe('expired');
+    // F2-FR4/F2-AC4: Options re-opens with the connected email prefilled.
+    expect(h.options.opens).toEqual(['me@x.com']);
   });
 
   it('labels the auth re-prompt "Private Cloud" when targeting Private Cloud (F8 reuse)', async () => {

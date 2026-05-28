@@ -39,7 +39,7 @@ const tokens = new TokenStore(store);
 const settingsStore = new SettingsStore(store);
 const offscreen = new OffscreenManager(new ChromeOffscreenHost());
 
-function buildDeps(tabId: number, token: string): SendDocumentDeps {
+function buildDeps(tabId: number, token: string, account?: string): SendDocumentDeps {
   return {
     // Private Cloud adapter is added in F8; default to public Cloud for now.
     resolveDelivery: (_target: Target) =>
@@ -51,6 +51,7 @@ function buildDeps(tabId: number, token: string): SendDocumentDeps {
     badge,
     clock,
     hasToken: async (_target: Target) => (await tokens.getToken()) !== undefined,
+    ...(account !== undefined ? { account } : {}),
     authDeps: {
       clearToken: () => tokens.clearToken(),
       notifier,
@@ -62,7 +63,8 @@ function buildDeps(tabId: number, token: string): SendDocumentDeps {
 async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Promise<void> {
   const settings = await settingsStore.get();
   const token = (await tokens.getToken()) ?? '';
-  const deps = buildDeps(tabId, token);
+  const account = await tokens.getAccount();
+  const deps = buildDeps(tabId, token, account);
   const request = resolveSendRequest(settings, { hostname }, mode ? { mode } : {});
   await sendDocument(deps, request);
 }

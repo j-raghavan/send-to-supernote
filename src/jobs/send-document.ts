@@ -69,6 +69,8 @@ export interface SendDocumentDeps {
   clock: Clock;
   /** True when a valid token exists for the target (F6-AC6 connect-first gate). */
   hasToken: (target: Target) => Promise<boolean>;
+  /** The connected account email, used to prefill the re-connect form (F2-FR4). */
+  account?: string;
   /** Auth-failure recovery deps (F2-FR4), used when a step returns an auth failure. */
   authDeps: AuthFailureDeps;
   /** Optional filename-confirm hook (F6-FR4); returns the (possibly edited) name. */
@@ -212,6 +214,7 @@ async function finishDeliveryFailure(
 ): Promise<Result<SendSuccess, SendError>> {
   const outcome: DeliveryOutcome = await routeDeliveryFailure(failure, deps.authDeps, {
     targetLabel: req.target === 'privatecloud' ? 'Private Cloud' : 'Supernote',
+    ...(deps.account !== undefined ? { account: deps.account } : {}),
   });
   if (outcome.kind === 'auth') {
     await deps.badge.set('expired');

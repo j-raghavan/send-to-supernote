@@ -98,6 +98,7 @@ async function harness(opts: { connected?: boolean } = {}): Promise<Harness> {
     badge,
     clock: new FakeClock(Date.UTC(2026, 4, 28)),
     hasToken: async (_t: Target) => (await tokens.getToken()) !== undefined,
+    account: 'me@x.com',
     authDeps: { clearToken: () => tokens.clearToken(), notifier, options },
   };
   return { deps, http, notifier, options, badge, tokens, kv };
@@ -281,11 +282,9 @@ describe('F6-AC3 / F6-AC5 traceability', () => {
 
     await sendDocument(h.deps, req());
 
-    // The reconnect next-action: Options is opened and a "session expired" toast
-    // is shown. NOTE: the saga's delivery-failure path passes only targetLabel to
-    // routeDeliveryFailure (not the account), so Options opens WITHOUT a prefill
-    // here — see the report's gap note (F2-FR4 says "email prefilled").
-    expect(h.options.opens).toHaveLength(1);
+    // The reconnect next-action: Options is opened with the connected email
+    // PREFILLED (F2-FR4 / F2-AC4) and a "session expired" toast is shown.
+    expect(h.options.opens).toEqual(['me@x.com']);
     expect(h.notifier.notifications.some((n) => n.title.includes('session expired'))).toBe(true);
   });
 });
