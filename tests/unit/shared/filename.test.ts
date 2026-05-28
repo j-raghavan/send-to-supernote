@@ -61,6 +61,19 @@ describe('sanitizeBaseName (F6-FR3)', () => {
     const single = 'x'.repeat(200);
     expect(sanitizeBaseName(single).length).toBe(120);
   });
+
+  it('sanitizes the F6-AC2 example title "My: Article*" to "My-Article"', () => {
+    expect(sanitizeBaseName('My: Article*')).toBe('My-Article');
+  });
+
+  it('reduces an all-illegal/dot/hyphen title to empty (drives the AC2b fallback)', () => {
+    expect(sanitizeBaseName('...---...')).toBe('');
+    expect(sanitizeBaseName('()[]{}\'"')).toBe('');
+  });
+
+  it('preserves internal dots while trimming only the edges', () => {
+    expect(sanitizeBaseName('v1.2.3 release notes')).toBe('v1.2.3-release-notes');
+  });
 });
 
 describe('fallbackBaseName (F6-AC2b)', () => {
@@ -105,6 +118,17 @@ describe('dedupeName (F6-AC4)', () => {
 
   it('dedupes per format extension independently', () => {
     expect(dedupeName('Guide', 'epub', ['Guide.pdf'])).toBe('Guide.epub');
+  });
+
+  it('returns the plain name when only a -2 variant (not the base) already exists', () => {
+    // The base name itself is free, so no counter is appended.
+    expect(dedupeName('Guide', 'pdf', ['Guide-2.pdf'])).toBe('Guide.pdf');
+  });
+
+  it('skips occupied counters to the first free slot (-2 and -3 taken -> -4)', () => {
+    expect(dedupeName('Guide', 'pdf', ['Guide.pdf', 'Guide-2.pdf', 'Guide-3.pdf'])).toBe(
+      'Guide-4.pdf',
+    );
   });
 });
 
