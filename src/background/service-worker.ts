@@ -17,13 +17,15 @@ import { retryPending } from '@jobs/retry-pending';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { PrivateCloudStore } from '@auth/private-cloud-store';
+import { connectAccount } from '@auth/connect-account';
+import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import type { Target } from '@domain/settings';
 import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-target';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { type FeatureFlags, normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import type { CaptureMode } from '@domain/capture';
-import { WebCryptoRandomSource } from './crypto';
+import { webCryptoSha256Hex, WebCryptoRandomSource } from './crypto';
 import { offerFallbackPrompt } from './fallback-prompt';
 import { FetchHttpClient } from './fetch-http-client';
 import { ChromeStorageLocal } from './chrome-storage';
@@ -192,6 +194,48 @@ function hostnameOf(url: string | undefined): string {
   }
 }
 
+interface ConnectMessage {
+  target: Target;
+  account: string;
+  password: string;
+  baseUrl?: string;
+}
+
+/**
+ * Run sign-in IN THE SERVICE WORKER so the DNR Origin-strip rule applies to the
+ * fetch (viewer.supernote.com 403s when a browser Origin header is present —
+ * F5-FR1 spike). On success, pin the target and retry any retained jobs (F9-FR1).
+ * Returns a serializable result for the popup/Options page.
+ */
+async function handleConnect(msg: ConnectMessage): Promise<{ ok: boolean; error?: string }> {
+  const loginDeps = { http, sha256hex: webCryptoSha256Hex, random };
+  if (msg.target === 'privatecloud') {
+    if (!msg.baseUrl) {
+      return { ok: false, error: 'Missing Private Cloud server URL.' };
+    }
+    const result = await connectPrivateCloud(
+      { ...loginDeps, store },
+      { baseUrl: msg.baseUrl, account: msg.account, password: msg.password },
+    );
+    if (!result.ok) {
+      return { ok: false, error: result.error.message };
+    }
+    await settingsStore.setTarget('privatecloud');
+    await retryAfterReconnect('privatecloud');
+    return { ok: true };
+  }
+  const result = await connectAccount(
+    { ...loginDeps, tokens },
+    { account: msg.account, password: msg.password },
+  );
+  if (!result.ok) {
+    return { ok: false, error: result.error.message };
+  }
+  await settingsStore.setTarget('cloud');
+  await retryAfterReconnect('cloud');
+  return { ok: true };
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   registerContextMenus();
   void pruneStaleJobs();
@@ -219,17 +263,48 @@ async function sendActiveTab(mode?: CaptureMode): Promise<void> {
   }
 }
 
-// Popup "Send this page" forwards here; Options posts "reconnected" after a
-// successful (re)connect so retained jobs for that target are retried (F9-FR1).
-chrome.runtime.onMessage.addListener((message: unknown) => {
-  if (typeof message !== 'object' || message === null) {
-    return;
-  }
-  const msg = message as { type?: string; target?: Target };
-  if (msg.type === 'send') {
-    void sendActiveTab();
-  } else if (msg.type === 'reconnected' && msg.target !== undefined) {
-    void retryAfterReconnect(msg.target);
-  }
-});
+// Popup/Options forward here. Network runs in the SW so the DNR Origin-strip
+// applies: `connect` performs sign-in (F2/F8); `send` runs the saga (F6);
+// `reconnected` retries retained jobs (F9-FR1).
+chrome.runtime.onMessage.addListener(
+  (
+    message: unknown,
+    _sender,
+    sendResponse: (response: { ok: boolean; error?: string }) => void,
+  ): boolean | undefined => {
+    if (typeof message !== 'object' || message === null) {
+      return undefined;
+    }
+    const msg = message as {
+      type?: string;
+      target?: Target;
+      account?: string;
+      password?: string;
+      baseUrl?: string;
+    };
+    if (msg.type === 'send') {
+      void sendActiveTab();
+      return undefined;
+    }
+    if (msg.type === 'reconnected' && msg.target !== undefined) {
+      void retryAfterReconnect(msg.target);
+      return undefined;
+    }
+    if (
+      msg.type === 'connect' &&
+      msg.target !== undefined &&
+      msg.account !== undefined &&
+      msg.password !== undefined
+    ) {
+      void handleConnect({
+        target: msg.target,
+        account: msg.account,
+        password: msg.password,
+        ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),
+      }).then(sendResponse);
+      return true; // keep the message channel open for the async response
+    }
+    return undefined;
+  },
+);
 /* c8 ignore stop */

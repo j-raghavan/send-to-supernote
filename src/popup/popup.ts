@@ -8,14 +8,10 @@
 /* c8 ignore start */
 import './popup.css';
 import { ChromeStorageLocal } from '../background/chrome-storage';
-import { FetchHttpClient } from '../background/fetch-http-client';
 import { ChromePermissionGranter } from '../background/permissions';
-import { webCryptoSha256Hex, WebCryptoRandomSource } from '../background/crypto';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
-import { connectAccount } from '@auth/connect-account';
-import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
@@ -42,16 +38,18 @@ function providerLabel(target: Target): string {
   return target === 'privatecloud' ? 'Private Cloud' : 'Supernote Cloud';
 }
 
-function authDeps(): {
-  http: FetchHttpClient;
-  sha256hex: typeof webCryptoSha256Hex;
-  random: WebCryptoRandomSource;
-} {
-  return {
-    http: new FetchHttpClient(),
-    sha256hex: webCryptoSha256Hex,
-    random: new WebCryptoRandomSource(),
-  };
+/** Ask the service worker to sign in (the SW's fetch gets the DNR Origin-strip). */
+async function requestConnect(payload: {
+  target: Target;
+  account: string;
+  password: string;
+  baseUrl?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const res: { ok?: boolean; error?: string } | undefined = await chrome.runtime.sendMessage({
+    type: 'connect',
+    ...payload,
+  });
+  return { ok: res?.ok === true, ...(res?.error !== undefined ? { error: res.error } : {}) };
 }
 
 async function render(): Promise<void> {
@@ -196,32 +194,39 @@ async function submitSignin(): Promise<void> {
     }
   };
 
+  const fail = (result: { error?: string }): void =>
+    finish(false, `Could not sign in: ${result.error ?? 'unknown error'}`);
+
   if (provider === 'privatecloud') {
     const validated = validateBaseUrl(byId<HTMLInputElement>('pc-url')?.value ?? '');
     if (!validated.ok) {
       finish(false, 'Enter a valid server URL (http or https).');
       return;
     }
-    const result = await connectPrivateCloud(
-      { ...authDeps(), store },
-      { baseUrl: validated.value.baseUrl, account: email, password },
-    );
+    // Grant host access for the user-entered origin here (this needs the click
+    // gesture); the service worker then performs the login fetch.
+    const granted = await new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
+    if (!granted) {
+      finish(false, 'Permission to reach that server was not granted.');
+      return;
+    }
+    const result = await requestConnect({
+      target: 'privatecloud',
+      account: email,
+      password,
+      baseUrl: validated.value.baseUrl,
+    });
     if (result.ok) {
-      await new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
-      await settings.setTarget('privatecloud');
-      void chrome.runtime.sendMessage({ type: 'reconnected', target: 'privatecloud' });
       finish(true);
     } else {
-      finish(false, `Could not sign in: ${result.error.message}`);
+      fail(result);
     }
   } else {
-    const result = await connectAccount({ ...authDeps(), tokens }, { account: email, password });
+    const result = await requestConnect({ target: 'cloud', account: email, password });
     if (result.ok) {
-      await settings.setTarget('cloud');
-      void chrome.runtime.sendMessage({ type: 'reconnected', target: 'cloud' });
       finish(true);
     } else {
-      finish(false, `Could not sign in: ${result.error.message}`);
+      fail(result);
     }
   }
 }
