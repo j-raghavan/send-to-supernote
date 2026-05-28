@@ -8,6 +8,7 @@ import {
   endpointUrl,
   findDocumentFolderId,
   isAuthFailure,
+  isTransferOk,
   normalizeEnvelope,
   normalizeFolderEntry,
   normalizeIsFolder,
@@ -305,5 +306,44 @@ describe('connectionFailure (F8-FR6)', () => {
 describe('privateCloudNonce (F8-FR2)', () => {
   it('concatenates 10 random digits and the timestamp', () => {
     expect(privateCloudNonce('1234567890', 1717000000000)).toBe('12345678901717000000000');
+  });
+});
+
+describe('isTransferOk (F8-FR6 OSS relax)', () => {
+  it('passes a bare 200 with no JSON body (raw transfer)', () => {
+    expect(isTransferOk(200, undefined)).toBe(true);
+  });
+
+  it('passes a 2xx with a non-object body', () => {
+    expect(isTransferOk(204, 'OK')).toBe(true);
+  });
+
+  it('passes an explicit {success:true} envelope', () => {
+    expect(isTransferOk(200, { success: true })).toBe(true);
+  });
+
+  it('passes a {code:0,data} success envelope', () => {
+    expect(isTransferOk(200, { code: 0, data: {} })).toBe(true);
+  });
+
+  it('passes a 2xx object with no envelope signal (lenient)', () => {
+    expect(isTransferOk(200, { id: 'obj-1' })).toBe(true);
+  });
+
+  it('fails a non-2xx status', () => {
+    expect(isTransferOk(500, { success: true })).toBe(false);
+    expect(isTransferOk(403, undefined)).toBe(false);
+  });
+
+  it('fails an explicit {success:false} envelope', () => {
+    expect(isTransferOk(200, { success: false })).toBe(false);
+  });
+
+  it('fails an explicit non-OK {code}', () => {
+    expect(isTransferOk(200, { code: 500 })).toBe(false);
+  });
+
+  it('fails when an E0401 auth error is present', () => {
+    expect(isTransferOk(200, { errorCode: 'E0401' })).toBe(false);
   });
 });

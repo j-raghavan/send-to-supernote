@@ -24,6 +24,7 @@ import {
   type DeliveryFailure,
   endpointUrl,
   type Folder,
+  isTransferOk,
   normalizeEnvelope,
   parseFolderList,
   privateCloudNonce,
@@ -151,10 +152,16 @@ export async function uploadToPrivateCloud(
   if (!uploadRes.ok) {
     return uploadRes;
   }
-  const uploadEnv = normalizeEnvelope(uploadRes.value.json);
-  if (uploadRes.value.status < 200 || uploadRes.value.status >= 300 || !uploadEnv.success) {
+  // The OSS step is a RAW byte transfer: a bare 2xx (no envelope) is success.
+  // It only fails on a non-2xx status or an explicit failure envelope (F8-FR6
+  // OSS relax). Integrity is still guaranteed by the strict finish gate (I-3).
+  if (!isTransferOk(uploadRes.value.status, uploadRes.value.json)) {
     return err(
-      classifyDeliveryFailure(uploadRes.value.status, uploadEnv, 'Private Cloud upload failed'),
+      classifyDeliveryFailure(
+        uploadRes.value.status,
+        normalizeEnvelope(uploadRes.value.json),
+        'Private Cloud upload failed',
+      ),
     );
   }
 

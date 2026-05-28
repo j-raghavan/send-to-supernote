@@ -33,6 +33,13 @@ per-path feature flag; `delivery/fallback.ts` offers public→private with the s
 private adapter does NOT hardcode the upload path — it uses the URL returned by `apply` (commonly
 `/api/oss/upload`).
 
+**Private Cloud OSS transfer step (F8-FR6):** the multipart upload to the apply-issued URL is a **raw
+byte transfer** — success is **HTTP 2xx, no envelope required** (a real server may return a bare 200
+with no JSON body); it fails only on a non-2xx status or an *explicit* failure envelope
+(`success:false` / `E0401`). This is the `isTransferOk(status, rawJson)` domain helper. By contrast,
+`apply` and `finish` remain **envelope-strict**; document integrity is still guaranteed by the
+finish gate (I-3), not by the transfer step's body.
+
 ### Consequences
 
 - Good: the saga (`jobs/send-document.ts`) depends only on `DeliveryPort` → trivial fallback + flags.

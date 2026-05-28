@@ -273,3 +273,32 @@ export function connectionFailure(message: string): DeliveryFailure {
 export function privateCloudNonce(randomDigits: string, timestamp: number): string {
   return `${randomDigits}${String(timestamp)}`;
 }
+
+/**
+ * Whether the Private Cloud OSS transfer step succeeded (F8-FR6, OSS relax).
+ *
+ * The multipart upload to the apply-issued URL is a RAW byte transfer: success
+ * is HTTP 2xx, and a bare 200 with no JSON body is OK (a real server may return
+ * no envelope). It only FAILS when the server explicitly says so — a non-2xx
+ * status, or a present envelope that is `success:false` / carries an auth error.
+ * `apply` and `finish` remain envelope-strict (integrity is guaranteed by the
+ * finish gate, I-3); this leniency applies ONLY to the byte-transfer step.
+ */
+export function isTransferOk(status: number, rawJson: unknown): boolean {
+  if (status < 200 || status >= 300) {
+    return false;
+  }
+  // No body / non-object body => a bare 2xx transfer, which is OK.
+  if (typeof rawJson !== 'object' || rawJson === null) {
+    return true;
+  }
+  // An envelope is present: it must not be an EXPLICIT failure. A `{success}` or
+  // `{code}` envelope is honored; an auth error (E0401) always fails. Any other
+  // 2xx object body (no success/code/errorCode signal) is treated as OK.
+  const body = rawJson as Record<string, unknown>;
+  const hasEnvelope = 'success' in body || 'code' in body || body.errorCode !== undefined;
+  if (!hasEnvelope) {
+    return true;
+  }
+  return normalizeEnvelope(rawJson).success;
+}

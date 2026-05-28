@@ -36,11 +36,7 @@ import { disconnectPrivateCloud } from '@auth/disconnect';
 import { PrivateCloudStore } from '@auth/private-cloud-store';
 import { LOGIN_PATH, NONCE_PATH } from '@auth/login-routine';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
-import {
-  classifyDeliveryFailure,
-  normalizeEnvelope,
-  DEFAULT_PUBLIC_PROFILE,
-} from '@domain/delivery';
+import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { StorageKeys } from '@shared/storage-keys';
 import type { UploadInput } from '@delivery/delivery-port';
 import { FakeHttpClient } from '../fakes/fake-http-client';
@@ -248,16 +244,11 @@ describe('F8-AC6 — non-HTTPS warning + connection (not auth) for an unreachabl
   });
 });
 
-describe('OSS-step envelope deviation (engineer deviation #2) — CURRENT behavior', () => {
-  it('DOCUMENTS that a bare-200 OSS response with NO JSON body is treated as a FAILURE', async () => {
-    // The reference (nickian) client checks HTTP status ALONE for the multipart
-    // OSS step. The current adapter requires BOTH 2xx AND a success envelope, so
-    // a real server returning a bare 200 with no body normalizes to success:false
-    // and FAILS. This test pins the current behavior; see the report for the
-    // recommended ruling (relax to "2xx OR success-envelope").
-    const bare = normalizeEnvelope(undefined);
-    expect(bare.success).toBe(false); // root cause: no success/code field
-
+describe('OSS-step envelope relax (F8-FR6) — raw byte transfer', () => {
+  it('a bare-200 OSS response with NO JSON body now SUCCEEDS end-to-end (apply→OSS→finish→done)', async () => {
+    // The OSS step is a raw byte transfer: success is HTTP 2xx, no envelope
+    // required (a real server may return a bare 200). apply/finish stay strict;
+    // integrity is guaranteed by the finish gate (I-3).
     const http = new FakeHttpClient()
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: RETURNED_URL } })
       // A bare 200 with NO json body on the OSS multipart step.
@@ -266,24 +257,42 @@ describe('OSS-step envelope deviation (engineer deviation #2) — CURRENT behavi
 
     const result = await uploadToPrivateCloud(pcDeps(http), blob());
 
-    // CURRENT behavior: the upload is rejected even though the OSS step returned 2xx.
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('protocol');
-      // classifyDeliveryFailure on a non-auth bare-200 yields the fallback message.
-      const expected = classifyDeliveryFailure(200, bare, 'Private Cloud upload failed');
-      expect(result.error.message).toBe(expected.message);
-    }
-    // The finish step was NOT reached (upload was treated as failed).
-    expect(http.urls).not.toContain(`${BASE}/api/file/upload/finish`);
+    expect(result.ok).toBe(true);
+    // The finish step WAS reached and verified.
+    expect(http.urls).toContain(`${BASE}/api/file/upload/finish`);
   });
 
-  it('a bare-200 OSS WITH a success envelope succeeds (the path that currently works)', async () => {
+  it('a bare-200 OSS WITH a success envelope still succeeds', async () => {
     const http = new FakeHttpClient()
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: RETURNED_URL } })
       .on(RETURNED_URL, { status: 200, json: { success: true } })
       .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
     const result = await uploadToPrivateCloud(pcDeps(http), blob());
     expect(result.ok).toBe(true);
+  });
+
+  it('negative control: a 2xx OSS with explicit {success:false} STILL fails', async () => {
+    const http = new FakeHttpClient()
+      .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: RETURNED_URL } })
+      .on(RETURNED_URL, { status: 200, json: { success: false, errorMsg: 'rejected' } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(pcDeps(http), blob());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('protocol');
+    }
+    // finish was NOT reached.
+    expect(http.urls).not.toContain(`${BASE}/api/file/upload/finish`);
+  });
+
+  it('an explicit E0401 on the OSS step still routes to an auth failure', async () => {
+    const http = new FakeHttpClient()
+      .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: RETURNED_URL } })
+      .on(RETURNED_URL, { status: 200, json: { success: false, errorCode: 'E0401' } });
+    const result = await uploadToPrivateCloud(pcDeps(http), blob());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('auth');
+    }
   });
 });
