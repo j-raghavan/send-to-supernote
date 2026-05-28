@@ -14,6 +14,8 @@ import { webCryptoSha256Hex, WebCryptoRandomSource } from '../background/crypto'
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
+import { connectAccount } from '@auth/connect-account';
+import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
@@ -96,7 +98,51 @@ async function render(): Promise<void> {
 
   renderOnboarding(current.target);
   renderPrivacy();
+  wireConnection();
   wirePrivateCloud();
+}
+
+/** Notify the service worker that a target (re)connected, so F9 auto-retries (F9-FR1). */
+function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
+  void chrome.runtime.sendMessage({ type: 'reconnected', target });
+}
+
+/** Wire the public-Cloud Connect / Disconnect form (F2 via Options, F7-FR1). */
+function wireConnection(): void {
+  const form = byId<HTMLFormElement>('connect-form');
+  const email = byId<HTMLInputElement>('email');
+  const password = byId<HTMLInputElement>('password');
+  const disconnectButton = byId<HTMLButtonElement>('disconnect');
+
+  form?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void connectAccount(
+      {
+        http: new FetchHttpClient(),
+        sha256hex: webCryptoSha256Hex,
+        random: new WebCryptoRandomSource(),
+        tokens,
+      },
+      { account: email?.value ?? '', password: password?.value ?? '' },
+    ).then((result) => {
+      if (password) {
+        password.value = ''; // never keep the password in the DOM longer than needed
+      }
+      if (result.ok) {
+        notifyReconnected('cloud');
+        void render();
+      } else {
+        const status = byId('connection-status');
+        if (status) {
+          status.textContent = `Could not connect: ${result.error.message}`;
+        }
+      }
+    });
+  });
+
+  disconnectButton?.addEventListener('click', () => {
+    void disconnectPublicCloud({ store }).then(() => render());
+  });
 }
 
 /** Wire the Private Cloud base-URL entry + R-10 warning + connect (F7-FR3). */
@@ -137,8 +183,13 @@ function wirePrivateCloud(): void {
     ).then((result) => {
       if (result.ok) {
         void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
+        notifyReconnected('privatecloud');
       }
     });
+  });
+
+  byId<HTMLButtonElement>('pc-disconnect')?.addEventListener('click', () => {
+    void disconnectPrivateCloud({ store }).then(() => render());
   });
 }
 
