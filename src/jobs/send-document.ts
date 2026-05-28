@@ -23,8 +23,9 @@ import { type Target } from '@domain/settings';
 import { type DeliveryFailure, findDocumentFolderId, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
 import { buildUploadFilename } from '@shared/filename';
-import type { DeliveryPort } from '@delivery/delivery-port';
+import type { DeliveryPort, UploadInput } from '@delivery/delivery-port';
 import { type DeliveryOutcome, routeDeliveryFailure } from '@delivery/route-delivery-failure';
+import { canFallbackToPrivate, offerPrivateCloudFallback } from '@delivery/fallback';
 import type { AuthFailureDeps } from '@auth/handle-auth-failure';
 import { type CaptureError, type CaptureReaderDeps, captureReader } from '@capture/capture-reader';
 import { type CaptureFullPageDeps, captureFullPage } from '@capture/capture-fullpage';
@@ -75,6 +76,20 @@ export interface SendDocumentDeps {
   authDeps: AuthFailureDeps;
   /** Optional filename-confirm hook (F6-FR4); returns the (possibly edited) name. */
   confirmName?: (suggested: string) => Promise<string>;
+  /**
+   * Optional public->private fallback (F9-FR2). When a NON-AUTH public-Cloud send
+   * fails and a Private Cloud is configured, offer to re-send the already-
+   * converted blob to the Private Cloud (no re-capture). Absent when no Private
+   * Cloud is configured or the current target is already Private Cloud.
+   */
+  fallback?: {
+    /** Build the Private Cloud DeliveryPort for the re-send. */
+    privatePort: () => DeliveryPort;
+    /** Optional PC default folder id; falls back to the PC Document/ folder. */
+    privateFolderId?: string;
+    /** One-click prompt; resolves true when the user accepts. */
+    offer: () => Promise<boolean>;
+  };
 }
 
 export type SendErrorKind = 'not-connected' | 'capture' | 'render' | 'auth' | 'delivery';
@@ -143,15 +158,16 @@ export async function sendDocument(
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
   await deps.notifier.notify(noteUploading(fileName));
-  const uploaded = await port.uploadDocument({
+  const uploadInput = {
     bytes: stored.bytes,
     contentType: contentTypeFor(req.format),
     directoryId: destination,
     fileName,
-  });
+  };
+  const uploaded = await port.uploadDocument(uploadInput);
 
   if (!uploaded.ok) {
-    return finishDeliveryFailure(deps, uploaded.error, req);
+    return finishDeliveryFailure(deps, uploaded.error, req, uploadInput, rendered.value.handle);
   }
 
   // finish verified by the adapter -> drive the FSM to done (I-3)
@@ -211,6 +227,8 @@ async function finishDeliveryFailure(
   deps: SendDocumentDeps,
   failure: DeliveryFailure,
   req: SendRequest,
+  uploadInput: UploadInput,
+  blobHandle: string,
 ): Promise<Result<SendSuccess, SendError>> {
   const outcome: DeliveryOutcome = await routeDeliveryFailure(failure, deps.authDeps, {
     targetLabel: req.target === 'privatecloud' ? 'Private Cloud' : 'Supernote',
@@ -220,6 +238,28 @@ async function finishDeliveryFailure(
     await deps.badge.set('expired');
     return fail('auth', 'Session expired — reconnect to retry', 'failed');
   }
+
+  // Non-auth public failure: offer the Private Cloud fallback reusing the
+  // already-converted blob (F9-FR2). Only eligible from a public-Cloud send with
+  // a configured Private Cloud (the saga wires `fallback` only then).
+  if (req.target === 'cloud' && deps.fallback && canFallbackToPrivate(failure, true)) {
+    const privatePort = deps.fallback.privatePort();
+    const destination = await resolveDestination(privatePort, deps.fallback.privateFolderId);
+    const fb = await offerPrivateCloudFallback(
+      { privatePort: () => privatePort, offer: deps.fallback.offer },
+      { ...uploadInput, directoryId: destination },
+    );
+    if (fb.kind === 'sent') {
+      await deps.blobs.delete(blobHandle);
+      await deps.notifier.notify(noteSent(fb.result.fileName));
+      await deps.badge.set('idle');
+      return ok({
+        fileName: fb.result.fileName,
+        state: completeFinish('finishing', true) as 'done',
+      });
+    }
+  }
+
   await deps.notifier.notify(noteSendFailed(failure.message));
   await deps.badge.set('error');
   return {

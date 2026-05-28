@@ -248,6 +248,48 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(h.badge.current).toBe('error');
   });
 
+  it('offers the Private Cloud fallback on a non-auth public failure and sends the SAME blob (F9-FR2)', async () => {
+    h.port.uploadResult = err({ kind: 'protocol', message: 'cloud endpoint changed' });
+    const pcPort = new FakeDeliveryPort();
+    pcPort.uploadResult = ok({ fileName: 'My-Article.pdf', innerName: 'inner' });
+    h.deps.fallback = { privatePort: () => pcPort, offer: () => Promise.resolve(true) };
+
+    const result = await sendDocument(h.deps, req());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.state).toBe('done');
+    }
+    // The already-converted blob was re-sent to the PC adapter (no re-capture).
+    expect(pcPort.uploadCalls).toHaveLength(1);
+    expect(h.badge.current).toBe('idle');
+  });
+
+  it('surfaces the failure when the user declines the Private Cloud fallback', async () => {
+    h.port.uploadResult = err({ kind: 'protocol', message: 'cloud endpoint changed' });
+    const pcPort = new FakeDeliveryPort();
+    h.deps.fallback = { privatePort: () => pcPort, offer: () => Promise.resolve(false) };
+
+    const result = await sendDocument(h.deps, req());
+
+    expect(result.ok).toBe(false);
+    expect(pcPort.uploadCalls).toHaveLength(0);
+    expect(h.badge.current).toBe('error');
+  });
+
+  it('does NOT offer the fallback for an auth failure (R-9: shared login)', async () => {
+    h.port.uploadResult = err({ kind: 'auth', errorCode: 'E0401', message: 'expired' });
+    const pcPort = new FakeDeliveryPort();
+    const offer = vi.fn().mockResolvedValue(true);
+    h.deps.fallback = { privatePort: () => pcPort, offer };
+
+    await sendDocument(h.deps, req());
+
+    expect(offer).not.toHaveBeenCalled();
+    expect(pcPort.uploadCalls).toHaveLength(0);
+    expect(h.badge.current).toBe('expired');
+  });
+
   it('deletes the rendered blob after a successful finish (cleanup)', async () => {
     await sendDocument(h.deps, req());
     // The FakeRenderer stored bytes under the first deterministic UUID handle;

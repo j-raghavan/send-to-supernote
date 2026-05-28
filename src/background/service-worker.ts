@@ -18,6 +18,7 @@ import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-tar
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import type { CaptureMode } from '@domain/capture';
 import { WebCryptoRandomSource } from './crypto';
+import { offerFallbackPrompt } from './fallback-prompt';
 import { FetchHttpClient } from './fetch-http-client';
 import { ChromeStorageLocal } from './chrome-storage';
 import { IndexedDbBlobTransfer } from './blob-transfer';
@@ -48,18 +49,20 @@ interface SendContext {
   cloudToken: string;
   account?: string;
   privateCloud?: PrivateTargetConfig;
+  privateFolderId?: string;
 }
 
 function buildDeps(ctx: SendContext): SendDocumentDeps {
+  const resolve = (target: Target): ReturnType<typeof resolveDelivery> =>
+    resolveDelivery(target, {
+      http,
+      random,
+      clock,
+      cloud: { profile: DEFAULT_PUBLIC_PROFILE, token: ctx.cloudToken },
+      ...(ctx.privateCloud !== undefined ? { privateCloud: ctx.privateCloud } : {}),
+    });
   return {
-    resolveDelivery: (target: Target) =>
-      resolveDelivery(target, {
-        http,
-        random,
-        clock,
-        cloud: { profile: DEFAULT_PUBLIC_PROFILE, token: ctx.cloudToken },
-        ...(ctx.privateCloud !== undefined ? { privateCloud: ctx.privateCloud } : {}),
-      }),
+    resolveDelivery: resolve,
     capture: { extractor: new ScriptingExtractor(ctx.tabId) },
     render: { renderer: new OffscreenRenderer(offscreen) },
     blobs,
@@ -73,6 +76,17 @@ function buildDeps(ctx: SendContext): SendDocumentDeps {
       notifier,
       options: new ChromeOptionsOpener(),
     },
+    // F9-FR2: offer the public->private fallback only when a Private Cloud is
+    // configured (the saga restricts it to a NON-AUTH public-Cloud send).
+    ...(ctx.privateCloud !== undefined
+      ? {
+          fallback: {
+            privatePort: () => resolve('privatecloud'),
+            ...(ctx.privateFolderId !== undefined ? { privateFolderId: ctx.privateFolderId } : {}),
+            offer: offerFallbackPrompt,
+          },
+        }
+      : {}),
   };
 }
 
@@ -91,14 +105,15 @@ async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Pro
     pcBaseUrl !== undefined && pcToken !== undefined
       ? { baseUrl: pcBaseUrl, token: pcToken }
       : undefined;
+  const pcFolderId = await privateStore.getFolderId();
   const deps = buildDeps({
     tabId,
     cloudToken,
     ...(account !== undefined ? { account } : {}),
     ...(privateCloud !== undefined ? { privateCloud } : {}),
+    ...(pcFolderId !== undefined ? { privateFolderId: pcFolderId } : {}),
   });
-  const folderId =
-    settings.target === 'privatecloud' ? await privateStore.getFolderId() : undefined;
+  const folderId = settings.target === 'privatecloud' ? pcFolderId : settings.cloudFolderId;
   const request = resolveSendRequest(
     settings,
     { hostname },
