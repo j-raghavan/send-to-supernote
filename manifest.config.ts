@@ -41,6 +41,21 @@ export const manifest: chrome.runtime.ManifestV3 = {
   // `declarativeNetRequestWithHostAccess` is intentionally OMITTED — it is only
   // added if the F5-FR1 spike proves an S3 PUT header must be rewritten.
   permissions: ['activeTab', 'scripting', 'contextMenus', 'storage', 'notifications', 'offscreen'],
+
+  // F1-FR3: both candidate public-API hosts are declared statically (the
+  // F5-FR1 spike picks which one the account uses at runtime); Ratta's S3 host
+  // is included for the pre-signed PUT, narrowed as far as the spike allows.
+  // NO `<all_urls>`.
+  host_permissions: [
+    'https://cloud.supernote.com/*',
+    'https://viewer.supernote.com/*',
+    'https://*.amazonaws.com/*',
+  ],
+
+  // The Private Cloud origin is user-configured at runtime, so it cannot be a
+  // static host permission; it is granted via chrome.permissions.request for
+  // the entered origin when the user saves their Private Cloud URL (F8-FR1).
+  optional_host_permissions: ['http://*/*', 'https://*/*'],
 };
 
 export default manifest;

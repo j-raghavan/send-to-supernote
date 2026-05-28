@@ -47,3 +47,22 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
     expect(manifest.permissions).not.toContain('declarativeNetRequestWithHostAccess');
   });
 });
+
+describe('manifest host permissions (F1-FR3)', () => {
+  it('declares both candidate public-API hosts statically', () => {
+    expect(manifest.host_permissions).toContain('https://cloud.supernote.com/*');
+    expect(manifest.host_permissions).toContain('https://viewer.supernote.com/*');
+  });
+
+  it("declares Ratta's S3 host for the pre-signed PUT", () => {
+    expect(manifest.host_permissions).toContain('https://*.amazonaws.com/*');
+  });
+
+  it('never declares <all_urls> as a static host permission', () => {
+    expect(manifest.host_permissions).not.toContain('<all_urls>');
+  });
+
+  it('declares the Private Cloud origin under optional host permissions (runtime-granted)', () => {
+    expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);
+  });
+});
