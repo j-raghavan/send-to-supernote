@@ -38,6 +38,7 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
       'storage',
       'notifications',
       'offscreen',
+      'declarativeNetRequestWithHostAccess',
     ]);
   });
 
@@ -46,9 +47,10 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
     expect(manifest.permissions).not.toContain('identity');
   });
 
-  it('does NOT request declarativeNetRequest variants by default', () => {
+  it('uses the host-scoped DNR variant (not the broad declarativeNetRequest) to strip Origin (F5-FR1 spike)', () => {
+    expect(manifest.permissions).toContain('declarativeNetRequestWithHostAccess');
     expect(manifest.permissions).not.toContain('declarativeNetRequest');
-    expect(manifest.permissions).not.toContain('declarativeNetRequestWithHostAccess');
+    expect(manifest.declarative_net_request?.rule_resources?.[0]?.path).toBe('dnr-rules.json');
   });
 
   it('F10-FR6: identity is absent in both required and optional permissions (no third-party OAuth)', () => {

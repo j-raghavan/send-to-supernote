@@ -14,6 +14,7 @@ are **no unused permissions**. The extension requests **no `debugger`**, **no
 | `storage` | Persist the session token, settings, destination folder, and local send history in `chrome.storage.local` (never `.sync`). | F2, F7, F9, Data Model |
 | `notifications` | Show progress (capturing → uploading → done), the success "sync your device" toast, and actionable failures (incl. the Private Cloud fallback offer). | F6-FR5, F9-FR2 |
 | `offscreen` | Run DOM-dependent rendering (HTML → PDF/EPUB / `html2canvas`) in an offscreen document, since the MV3 service worker has no DOM. | F1-FR5, F3, F4 |
+| `declarativeNetRequestWithHostAccess` | Strip the browser `Origin` header on requests to the Supernote API hosts only — the F5-FR1 spike found `viewer.supernote.com` returns HTTP 403 when an `Origin` header is present. Host-scoped (uses host_permissions), not the broad `declarativeNetRequest`. Keeps the flow client-side (D-3). | F5-FR1 (spike), F5 |
 
 **Intentionally NOT requested:**
 
@@ -21,8 +22,9 @@ are **no unused permissions**. The extension requests **no `debugger`**, **no
   review risk). (D-1 / Constraints)
 - **`identity`** — there is no third-party OAuth and no third-party data sharing
   (D-4 / F10-FR6).
-- **`declarativeNetRequestWithHostAccess`** — reserved only if the F5-FR1 spike
-  shows an S3 `PUT` header must be rewritten; not requested by default.
+- **broad `declarativeNetRequest`** — not requested; only the host-scoped
+  `declarativeNetRequestWithHostAccess` variant is used (see the table above),
+  and it only removes the `Origin` header on the Supernote API hosts.
 - **`tabs`** — not requested; `chrome.tabs.query`/`create` work under `activeTab`.
 
 ## Host permissions (static)

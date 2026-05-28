@@ -45,9 +45,25 @@ export const manifest: chrome.runtime.ManifestV3 = {
   },
 
   // F1-FR2: least-privilege permissions. NO `debugger`, NO `identity`.
-  // `declarativeNetRequestWithHostAccess` is intentionally OMITTED — it is only
-  // added if the F5-FR1 spike proves an S3 PUT header must be rewritten.
-  permissions: ['activeTab', 'scripting', 'contextMenus', 'storage', 'notifications', 'offscreen'],
+  // `declarativeNetRequestWithHostAccess` is included because the F5-FR1 live
+  // spike (2026-05-28) showed viewer.supernote.com returns HTTP 403 when the
+  // request carries a browser `Origin` header; the DNR ruleset below strips the
+  // `Origin` header on requests to the Supernote API hosts (only — scoped by
+  // host_permissions). This keeps the flow fully client-side (D-3), no relay.
+  permissions: [
+    'activeTab',
+    'scripting',
+    'contextMenus',
+    'storage',
+    'notifications',
+    'offscreen',
+    'declarativeNetRequestWithHostAccess',
+  ],
+
+  // Strip the `Origin` header on Supernote API requests (see permissions note).
+  declarative_net_request: {
+    rule_resources: [{ id: 'supernote_headers', enabled: true, path: 'dnr-rules.json' }],
+  },
 
   // F1-FR3: both candidate public-API hosts are declared statically (the
   // F5-FR1 spike picks which one the account uses at runtime); Ratta's S3 host
