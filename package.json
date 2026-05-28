@@ -7,6 +7,8 @@
   "license": "MIT",
   "scripts": {
     "build": "vite build",
+    "build:all:dev:chrome": "vite build --mode development",
+    "dev": "vite build --watch --mode development",
     "zip": "node scripts/zip-artifact.mjs",
     "package": "npm run build && npm run zip",
     "test": "vitest run",
