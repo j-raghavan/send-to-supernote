@@ -9,6 +9,8 @@
     "build": "vite build",
     "build:all:dev:chrome": "vite build --mode development",
     "dev": "vite build --watch --mode development",
+    "dev:chrome": "npm run build:all:dev:chrome && node scripts/launch-chrome.mjs",
+    "launch:chrome": "node scripts/launch-chrome.mjs",
     "zip": "node scripts/zip-artifact.mjs",
     "crx": "node scripts/build-crx.mjs",
     "package": "npm run build && npm run zip",
