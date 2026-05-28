@@ -8,9 +8,14 @@
  */
 /* c8 ignore start */
 import { ChromeStorageLocal } from '../background/chrome-storage';
+import { FetchHttpClient } from '../background/fetch-http-client';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
+import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
+import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
+import { listFolders } from '@settings/list-folders';
+import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import {
   buildOptionsView,
   parseFormatChange,
@@ -76,6 +81,41 @@ async function render(): Promise<void> {
     confirm.addEventListener('change', () => {
       void settings.setConfirmFilename(confirm.checked);
     });
+  }
+
+  if (view.canPickCloudFolder) {
+    await renderFolderPicker(current.target);
+  }
+}
+
+/** Render the destination-folder picker for the public Cloud target (F7-FR2). */
+async function renderFolderPicker(target: 'cloud' | 'privatecloud'): Promise<void> {
+  const list = byId<HTMLUListElement>('folder-list');
+  if (!list) {
+    return;
+  }
+  const token = (await tokens.getToken()) ?? '';
+  const port = new PublicCloudAdapter({
+    http: new FetchHttpClient(),
+    profile: DEFAULT_PUBLIC_PROFILE,
+    token,
+  });
+  const listed = await listFolders(port, ROOT_DIRECTORY_ID);
+  if (!listed.ok) {
+    list.textContent = 'Could not load folders.';
+    return;
+  }
+  list.replaceChildren();
+  for (const folder of selectableFolders(listed.value)) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = folder.name;
+    button.addEventListener('click', () => {
+      void pickFolder(store, target, folder.id);
+    });
+    item.appendChild(button);
+    list.appendChild(item);
   }
 }
 
