@@ -6,7 +6,11 @@
  * the copy is testable and consistent with the privacy story (D-2/D-3).
  */
 
-/** Hosted Privacy Policy URL (placeholder until F10 publishes the final page). */
+/**
+ * Intended hosted Privacy Policy URL (F10-FR1). The policy TEXT lives in
+ * `docs/PRIVACY.md`; hosting a page at this URL and confirming it is a
+ * deferred-to-user deploy step (see docs/PRIVACY.md) before the Web Store listing.
+ */
 export const PRIVACY_POLICY_URL = 'https://j-raghavan.github.io/send-to-supernote/privacy';
 
 /** The one-line "password never stored" assurance (F7-FR5 / D-2). */
