@@ -9,6 +9,7 @@
  * Ports are added here as the FRs that need them are implemented; this file is
  * the single home for all of them.
  */
+import type { FullPageExtract, ReaderExtract } from '@domain/capture';
 
 /** Reasons the offscreen document may be created (subset we use). */
 export type OffscreenReason = 'DOM_PARSER' | 'BLOBS' | 'IFRAME_SCRIPTING';
@@ -137,4 +138,17 @@ export type BadgeState = 'idle' | 'busy' | 'error' | 'expired';
 /** Sets the toolbar action badge. Real adapter wraps `chrome.action`. */
 export interface Badge {
   set(state: BadgeState): Promise<void>;
+}
+
+/**
+ * Page-content extraction (F3/F4). The real adapters run in the content script
+ * against a DOM CLONE for Reader (never mutating the live page — I-4) and
+ * serialize the rendered DOM for Full Page. Tests inject canned extracts so the
+ * capture use cases are pure-testable without a real DOM.
+ */
+export interface Extractor {
+  /** Run Readability on a clone of the live document (F3-FR1). */
+  extractReader(): Promise<ReaderExtract>;
+  /** Serialize the rendered page + relevant computed styles (F4-FR2). */
+  serializeFullPage(): Promise<FullPageExtract>;
 }
