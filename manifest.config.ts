@@ -143,6 +143,12 @@ export function buildManifest(target: ExtensionTarget): WebExtManifest {
         type: 'module',
       },
       // AMO requires an explicit add-on id; pin a conservative minimum (locked).
+      // NOTE: the AMO `data_collection_permissions` disclosure is intentionally
+      // NOT declared here — that manifest key requires Firefox ~140, so at our
+      // `strict_min_version: 128.0` (ESR) it triggers a KEY_FIREFOX_UNSUPPORTED_BY_
+      // MIN_VER web-ext warning. The extension collects no data (D-3); declare
+      // `data_collection_permissions: {required:['none']}` only if/when the min
+      // version is raised to a build that supports it (AMO submission step).
       browser_specific_settings: {
         gecko: {
           id: 'send-to-supernote@j-raghavan',
