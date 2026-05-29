@@ -9,12 +9,13 @@
 /* c8 ignore start */
 import { captureModeForMenuItem, MENU_ITEMS } from '../capture/triggers';
 import type { CaptureMode } from '@domain/capture';
+import { api } from '@shared/browser-api';
 
 /** Register the capture context-menu items (idempotent: removes all first). */
 export function registerContextMenus(): void {
-  chrome.contextMenus.removeAll(() => {
+  api.contextMenus.removeAll(() => {
     for (const item of MENU_ITEMS) {
-      chrome.contextMenus.create({
+      api.contextMenus.create({
         id: item.id,
         title: item.title,
         contexts: [...item.contexts],
@@ -25,7 +26,7 @@ export function registerContextMenus(): void {
 
 /** Wire menu clicks to a capture handler. */
 export function onContextMenuClicked(handler: (mode: CaptureMode) => void): void {
-  chrome.contextMenus.onClicked.addListener((info) => {
+  api.contextMenus.onClicked.addListener((info) => {
     const mode = captureModeForMenuItem(String(info.menuItemId));
     if (mode) {
       handler(mode);

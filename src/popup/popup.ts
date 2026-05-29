@@ -19,6 +19,7 @@ import { SystemClock } from '../background/clock';
 import { StorageKeys } from '@shared/storage-keys';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
+import { api } from '@shared/browser-api';
 import type { Target } from '@domain/settings';
 import { buildPopupView } from './popup-view';
 import { PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from '../options/privacy-copy';
@@ -50,7 +51,7 @@ async function requestConnect(payload: {
 }): Promise<{ ok: boolean; error?: string; detail?: string }> {
   let res: { ok?: boolean; error?: string; detail?: string } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'connect', ...payload });
+    res = await api.runtime.sendMessage({ type: 'connect', ...payload });
   } catch (thrown) {
     // sendMessage rejects when there is no receiver (SW failed to register its
     // listener — usually a stale/un-reloaded build or a load-time crash).
@@ -87,7 +88,7 @@ async function requestConnect(payload: {
 async function requestCloudConnect(): Promise<{ ok: boolean; pending: boolean; reason?: string }> {
   let res: { ok?: boolean; pending?: boolean } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'connect-cloud' });
+    res = await api.runtime.sendMessage({ type: 'connect-cloud' });
   } catch (thrown) {
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     return {
@@ -121,11 +122,11 @@ async function render(): Promise<void> {
   const view = buildPopupView(session, account, current);
 
   const logo = byId<HTMLImageElement>('logo');
-  if (logo) logo.src = chrome.runtime.getURL('icons/icon32.png');
+  if (logo) logo.src = api.runtime.getURL('icons/icon32.png');
 
   const privacy = byId<HTMLAnchorElement>('privacy');
-  if (privacy) privacy.href = chrome.runtime.getURL(PRIVACY_PAGE_PATH);
-  byId('settings')?.addEventListener('click', () => void chrome.runtime.openOptionsPage());
+  if (privacy) privacy.href = api.runtime.getURL(PRIVACY_PAGE_PATH);
+  byId('settings')?.addEventListener('click', () => void api.runtime.openOptionsPage());
 
   // Build/host indicator — confirms which API host the loaded build targets
   // (a fresh build reads "viewer.supernote.com"; a stale one would read "cloud").
@@ -150,7 +151,7 @@ function renderConnected(account: string | undefined, target: Target): void {
   }
 
   const titleEl = byId('page-title');
-  void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+  void api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const title = tabs[0]?.title;
     if (titleEl) titleEl.textContent = title && title.trim() ? title : 'This page';
   });
@@ -185,7 +186,7 @@ async function runSendFromPopup(target: Target): Promise<void> {
 
   let res: { ok?: boolean; error?: string } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'send' });
+    res = await api.runtime.sendMessage({ type: 'send' });
   } catch (thrown) {
     res = { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
   }

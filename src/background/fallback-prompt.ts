@@ -1,5 +1,5 @@
 /**
- * Fallback offer prompt (F9-FR2) — THIN chrome.notifications glue.
+ * Fallback offer prompt (F9-FR2) — THIN api.notifications glue.
  *
  * The public->private fallback offer is a one-click notification with a "Send to
  * your Private Cloud instead" button; the returned promise resolves true when the
@@ -8,12 +8,14 @@
  * Coverage-excluded.
  */
 /* c8 ignore start */
+import { api } from '@shared/browser-api';
+
 const ICON = 'icons/icon128.png';
 const ACCEPT_BUTTON = 0;
 
 export function offerFallbackPrompt(): Promise<boolean> {
   return new Promise((resolve) => {
-    chrome.notifications.create(
+    api.notifications.create(
       {
         type: 'basic',
         iconUrl: ICON,
@@ -36,11 +38,11 @@ export function offerFallbackPrompt(): Promise<boolean> {
           }
         };
         const cleanup = (): void => {
-          chrome.notifications.onButtonClicked.removeListener(onClick);
-          chrome.notifications.onClosed.removeListener(onClosed);
+          api.notifications.onButtonClicked.removeListener(onClick);
+          api.notifications.onClosed.removeListener(onClosed);
         };
-        chrome.notifications.onButtonClicked.addListener(onClick);
-        chrome.notifications.onClosed.addListener(onClosed);
+        api.notifications.onButtonClicked.addListener(onClick);
+        api.notifications.onClosed.addListener(onClosed);
       },
     );
   });

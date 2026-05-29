@@ -9,11 +9,12 @@
  */
 /* c8 ignore start */
 import type { KeyValueStore } from '@shared/ports';
+import { api } from '@shared/browser-api';
 
 export class ChromeStorageLocal implements KeyValueStore {
   private get area(): chrome.storage.LocalStorageArea {
     // chrome.storage.local ONLY — never chrome.storage.sync (I-5).
-    return chrome.storage.local;
+    return api.storage.local;
   }
 
   async get<T>(key: string): Promise<T | undefined> {

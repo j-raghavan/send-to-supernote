@@ -28,6 +28,7 @@ import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
 import { buildOptionsView, parseFormatChange } from './options-view-model';
+import { api } from '@shared/browser-api';
 
 const store = new ChromeStorageLocal();
 const settings = new SettingsStore(store);
@@ -46,7 +47,7 @@ async function render(): Promise<void> {
   const view = buildOptionsView(session, account, current);
 
   const logo = byId<HTMLImageElement>('logo');
-  if (logo) logo.src = chrome.runtime.getURL('icons/icon512.png');
+  if (logo) logo.src = api.runtime.getURL('icons/icon512.png');
 
   const status = byId('connection-status');
   if (status) {
@@ -102,7 +103,7 @@ async function render(): Promise<void> {
 
 /** Notify the service worker that a target (re)connected, so F9 auto-retries (F9-FR1). */
 function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
-  void chrome.runtime.sendMessage({ type: 'reconnected', target });
+  void api.runtime.sendMessage({ type: 'reconnected', target });
 }
 
 /**
@@ -114,7 +115,7 @@ function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
 function wireConnection(): void {
   byId<HTMLButtonElement>('connect-cloud')?.addEventListener('click', () => {
     const hint = byId('connect-cloud-hint');
-    void chrome.runtime
+    void api.runtime
       .sendMessage({ type: 'connect-cloud' })
       .then((res: { ok?: boolean } | undefined) => {
         if (res?.ok === true) {
@@ -237,7 +238,7 @@ function renderOnboarding(target: 'cloud' | 'privatecloud'): void {
 function renderPrivacy(): void {
   const link = byId<HTMLAnchorElement>('privacy-link');
   if (link) {
-    link.href = chrome.runtime.getURL(PRIVACY_PAGE_PATH);
+    link.href = api.runtime.getURL(PRIVACY_PAGE_PATH);
   }
   const note = byId('password-note');
   if (note) {

@@ -6,10 +6,11 @@
  */
 /* c8 ignore start */
 import type { PermissionGranter } from '@shared/ports';
+import { api } from '@shared/browser-api';
 
 export class ChromePermissionGranter implements PermissionGranter {
   request(origin: string): Promise<boolean> {
-    return chrome.permissions.request({ origins: [origin] });
+    return api.permissions.request({ origins: [origin] });
   }
 }
 /* c8 ignore stop */

@@ -27,6 +27,7 @@ import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-tar
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { type FeatureFlags, normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
+import { api } from '@shared/browser-api';
 import type { CaptureMode } from '@domain/capture';
 import { webCryptoSha256Hex, WebCryptoRandomSource } from './crypto';
 import { offerFallbackPrompt } from './fallback-prompt';
@@ -218,7 +219,7 @@ async function runSend(
  * fetch the active tab's URL. Returns undefined for normal HTML pages.
  */
 async function probePdf(tabId: number): Promise<{ bytes: Uint8Array; title: string } | undefined> {
-  const [injection] = await chrome.scripting.executeScript({
+  const [injection] = await api.scripting.executeScript({
     target: { tabId },
     func: () => ({ contentType: document.contentType, url: location.href, title: document.title }),
   });
@@ -430,7 +431,7 @@ async function onCloudCookieSet(): Promise<void> {
 
 // Capture the session as soon as cloud.supernote.com sets `x-access-token`
 // (registered at top level so it survives SW eviction during a slow sign-in).
-chrome.cookies.onChanged.addListener((change) => {
+api.cookies.onChanged.addListener((change) => {
   if (
     change.removed ||
     change.cookie.name !== ACCESS_TOKEN_COOKIE ||
@@ -445,7 +446,7 @@ chrome.cookies.onChanged.addListener((change) => {
 // worker during a slow (captcha/code) sign-in. When the pending login tab
 // settles — a full load OR a SPA hash route change after login — try to
 // finalize too. tabs.onUpdated reliably wakes the SW, so the tab gets closed.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+api.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== 'complete' && changeInfo.url === undefined) {
     return;
   }
@@ -459,13 +460,13 @@ async function finalizePendingConnectForTab(tabId: number): Promise<void> {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+api.runtime.onInstalled.addListener(() => {
   registerContextMenus();
   void pruneStaleJobs();
 });
 
 // On wake, prune stale jobs (jobs themselves persist in chrome.storage.local).
-chrome.runtime.onStartup.addListener(() => {
+api.runtime.onStartup.addListener(() => {
   void pruneStaleJobs();
 });
 
@@ -477,7 +478,7 @@ onContextMenuClicked((mode) => {
 });
 
 async function sendActiveTab(mode?: CaptureMode): Promise<{ ok: boolean; error?: string }> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     return { ok: false, error: 'No active tab to send.' };
   }
@@ -501,7 +502,7 @@ console.warn('[send-to-supernote] SW build: one-button + EPUB + reader-fallback'
 // public Supernote Cloud (CAPTCHA/2FA-gated, so the user signs in on Supernote's
 // own page); `connect` performs Private Cloud sign-in (F8); `send` runs the saga
 // (F6); `reconnected` retries retained jobs (F9-FR1).
-chrome.runtime.onMessage.addListener(
+api.runtime.onMessage.addListener(
   (
     message: unknown,
     _sender,
