@@ -7,6 +7,8 @@ export default tseslint.config(
     ignores: [
       'node_modules/**',
       'dist/**',
+      'dist-firefox/**',
+      'web-ext-artifacts/**',
       'coverage/**',
       'spec/**',
       '*.log',
