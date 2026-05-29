@@ -109,6 +109,20 @@ jobs:
           fi
           cp artifacts/send-to-supernote.zip "artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip"
 
+      # Firefox (AMO) artifact alongside Chrome (FF7-FR1). package:firefox builds
+      # dist-firefox/ and zips it to a version-named file directly.
+      - name: Build + zip Firefox (AMO)
+        run: npm run package:firefox
+
+      - name: Verify Firefox artifact version matches the release
+        run: |
+          DIST_VER="$(jq -r '.version' dist-firefox/manifest.json)"
+          if [ "$DIST_VER" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::dist-firefox/manifest.json version ($DIST_VER) != release version (${{ steps.ver.outputs.version }})"
+            exit 1
+          fi
+          test -f "artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip"
+
       - name: Build signed CRX (only when CRX_PRIVATE_KEY is configured)
         if: env.CRX_PRIVATE_KEY != ''
         env:
@@ -121,6 +135,7 @@ jobs:
           name: send-to-supernote-${{ steps.ver.outputs.version }}
           path: |
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
           if-no-files-found: warn
 
@@ -135,6 +150,7 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
 
   changelog:
@@ -160,7 +176,7 @@ jobs:
           if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..$TAG"; else RANGE="$TAG"; fi
           CONTRIBUTORS="$(git log "$RANGE" --format='%an' | sort -u | paste -sd ', ' - || true)"
           CURRENT="$(gh release view "$TAG" --json body --jq '.body' 2>/dev/null || true)"
-          NOTES="$(printf '%s\n\n## 📦 Chrome Extension assets\n- `send-to-supernote-%s.zip` — unpacked load / Chrome Web Store upload\n- `send-to-supernote-%s.crx` — signed CRX for self-hosting (present only when a signing key is configured)\n\n## 👥 Contributors\n%s\n' "$CURRENT" "$VERSION" "$VERSION" "${CONTRIBUTORS:-—}")"
+          NOTES="$(printf '%s\n\n## 📦 Extension assets\n- `send-to-supernote-%s.zip` — Chrome (unpacked load / Chrome Web Store upload)\n- `send-to-supernote-firefox-%s.zip` — Firefox (AMO upload / about:debugging)\n- `send-to-supernote-%s.crx` — signed CRX for self-hosting (present only when a signing key is configured)\n\n## 👥 Contributors\n%s\n' "$CURRENT" "$VERSION" "$VERSION" "$VERSION" "${CONTRIBUTORS:-—}")"
           gh release edit "$TAG" --notes "$NOTES"
 
       - name: Update CHANGELOG.md and commit to the default branch
