@@ -69,6 +69,34 @@ body {
   font-size: 13.5px;
 }
 
+/* Segmented provider tabs (Supernote Cloud vs Private Cloud — mutually exclusive) */
+.seg {
+  display: flex;
+  background: var(--soft);
+  border-radius: var(--radius);
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.seg__btn {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg__btn.is-active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.1);
+}
+
 /* Cards */
 .card {
   background: var(--card);

@@ -26,7 +26,7 @@ import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
-import { buildOptionsView, parseFormatChange, parseTargetChange } from './options-view-model';
+import { buildOptionsView, parseFormatChange } from './options-view-model';
 
 const store = new ChromeStorageLocal();
 const settings = new SettingsStore(store);
@@ -73,17 +73,7 @@ async function render(): Promise<void> {
     });
   }
 
-  const target = byId<HTMLSelectElement>('target');
-  if (target) {
-    target.value = view.target;
-    target.addEventListener('change', () => {
-      const parsed = parseTargetChange(target.value);
-      if (parsed) {
-        void settings.setTarget(parsed);
-        renderOnboarding(parsed);
-      }
-    });
-  }
+  wireProviderTabs(view.target);
 
   const confirm = byId<HTMLInputElement>('confirm-filename');
   if (confirm) {
@@ -188,6 +178,35 @@ function wirePrivateCloud(): void {
       store,
       clearPendingJobs: () => queue.clearTarget('privatecloud'),
     }).then(() => render());
+  });
+}
+
+/**
+ * Wire the Supernote Cloud / Private Cloud tabs (the send target is one OR the
+ * other). Selecting a tab shows that provider's panel and pins it as the target.
+ */
+function wireProviderTabs(initialTarget: 'cloud' | 'privatecloud'): void {
+  const segCloud = byId<HTMLButtonElement>('seg-cloud');
+  const segPrivate = byId<HTMLButtonElement>('seg-private');
+
+  const show = (target: 'cloud' | 'privatecloud'): void => {
+    segCloud?.classList.toggle('is-active', target === 'cloud');
+    segPrivate?.classList.toggle('is-active', target === 'privatecloud');
+    const cloudPanel = byId('cloud-panel');
+    if (cloudPanel) cloudPanel.hidden = target !== 'cloud';
+    const privatePanel = byId('private-panel');
+    if (privatePanel) privatePanel.hidden = target !== 'privatecloud';
+    renderOnboarding(target);
+  };
+
+  show(initialTarget);
+  segCloud?.addEventListener('click', () => {
+    void settings.setTarget('cloud');
+    show('cloud');
+  });
+  segPrivate?.addEventListener('click', () => {
+    void settings.setTarget('privatecloud');
+    show('privatecloud');
   });
 }
 

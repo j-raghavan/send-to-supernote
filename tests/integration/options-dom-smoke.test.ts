@@ -29,8 +29,11 @@ const OPTIONS_HTML = `
       <button id="connect-cloud" type="button">Connect Supernote Cloud</button>
       <p id="connect-cloud-hint" hidden></p>
     </div>
+    <button id="seg-cloud" type="button">Supernote Cloud</button>
+    <button id="seg-private" type="button">Private Cloud</button>
+    <div id="cloud-panel"></div>
+    <div id="private-panel" hidden></div>
     <select id="default-format"><option value="epub">e</option><option value="pdf">p</option></select>
-    <select id="target"><option value="cloud">c</option><option value="privatecloud">pc</option></select>
     <input id="confirm-filename" type="checkbox" />
     <ul id="folder-list"></ul>
     <input id="pc-base-url" type="url" />

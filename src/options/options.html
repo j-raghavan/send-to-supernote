@@ -17,33 +17,86 @@
         </div>
       </header>
 
-      <!-- Supernote Cloud -->
-      <section id="connection" class="card">
-        <div class="card__head">
-          <h2>Supernote Cloud</h2>
-          <span id="connection-status" class="card__hint">Loading…</span>
-        </div>
+      <!-- Destination: Supernote Cloud OR Private Cloud (mutually exclusive). -->
+      <div class="seg" role="tablist">
+        <button id="seg-cloud" class="seg__btn is-active" type="button">Supernote Cloud</button>
+        <button id="seg-private" class="seg__btn" type="button">Private Cloud</button>
+      </div>
 
-        <div id="cloud-connected" class="account" hidden>
-          <span class="account__chip"
-            ><span class="dot"></span><span id="account-chip">Connected</span></span
-          >
-          <button id="disconnect" class="link link--muted" type="button">Sign out</button>
-        </div>
-
-        <div id="cloud-disconnected" class="stack" hidden>
-          <p class="muted">
-            Sign in on Supernote's own page (it handles the captcha and any verification code). The
-            extension connects automatically and never sees your password.
-          </p>
-          <div>
-            <button id="connect-cloud" class="btn btn--primary" type="button">
-              Connect Supernote Cloud
-            </button>
+      <!-- Supernote Cloud panel -->
+      <div id="cloud-panel">
+        <section id="connection" class="card">
+          <div class="card__head">
+            <h2>Supernote Cloud</h2>
+            <span id="connection-status" class="card__hint">Loading…</span>
           </div>
-          <p id="connect-cloud-hint" class="muted" hidden></p>
-        </div>
-      </section>
+
+          <div id="cloud-connected" class="account" hidden>
+            <span class="account__chip"
+              ><span class="dot"></span><span id="account-chip">Connected</span></span
+            >
+            <button id="disconnect" class="link link--muted" type="button">Sign out</button>
+          </div>
+
+          <div id="cloud-disconnected" class="stack" hidden>
+            <p class="muted">
+              Sign in on Supernote's own page (it handles the captcha and any verification code).
+              The extension connects automatically and never sees your password.
+            </p>
+            <div>
+              <button id="connect-cloud" class="btn btn--primary" type="button">
+                Connect Supernote Cloud
+              </button>
+            </div>
+            <p id="connect-cloud-hint" class="muted" hidden></p>
+          </div>
+        </section>
+
+        <section id="folder" class="card">
+          <div class="card__head">
+            <h2>Destination folder</h2>
+            <span class="card__hint">Defaults to <strong>Document/</strong></span>
+          </div>
+          <ul id="folder-list" class="folders"></ul>
+        </section>
+      </div>
+
+      <!-- Private Cloud panel -->
+      <div id="private-panel" hidden>
+        <section id="privatecloud-section" class="card">
+          <div class="card__head"><h2>Private Cloud</h2></div>
+          <div class="stack">
+            <input
+              id="pc-base-url"
+              class="input"
+              type="url"
+              placeholder="https://supernote.home.lan"
+            />
+            <div class="row">
+              <input
+                id="pc-email"
+                class="input"
+                type="email"
+                placeholder="Account email"
+                autocomplete="username"
+              />
+              <input
+                id="pc-password"
+                class="input"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+              />
+            </div>
+            <p id="password-note" class="muted"></p>
+            <p id="pc-http-warning" class="warning" hidden></p>
+            <div class="row">
+              <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
+              <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <!-- Capture defaults -->
       <section id="defaults" class="card">
@@ -56,61 +109,10 @@
               <option value="pdf">PDF</option>
             </select>
           </div>
-          <div class="field">
-            <span class="field__label">Send to</span>
-            <select id="target" class="select">
-              <option value="cloud">Supernote Cloud</option>
-              <option value="privatecloud">Private Cloud (self-hosted)</option>
-            </select>
-          </div>
           <label class="check">
             <input id="confirm-filename" type="checkbox" />
             Confirm the filename before each send
           </label>
-        </div>
-      </section>
-
-      <!-- Destination folder -->
-      <section id="folder" class="card">
-        <div class="card__head">
-          <h2>Destination folder</h2>
-          <span class="card__hint">Defaults to <strong>Document/</strong></span>
-        </div>
-        <ul id="folder-list" class="folders"></ul>
-      </section>
-
-      <!-- Private Cloud -->
-      <section id="privatecloud-section" class="card">
-        <div class="card__head"><h2>Private Cloud</h2></div>
-        <div class="stack">
-          <input
-            id="pc-base-url"
-            class="input"
-            type="url"
-            placeholder="https://supernote.home.lan"
-          />
-          <div class="row">
-            <input
-              id="pc-email"
-              class="input"
-              type="email"
-              placeholder="Account email"
-              autocomplete="username"
-            />
-            <input
-              id="pc-password"
-              class="input"
-              type="password"
-              placeholder="Password"
-              autocomplete="current-password"
-            />
-          </div>
-          <p id="password-note" class="muted"></p>
-          <p id="pc-http-warning" class="warning" hidden></p>
-          <div class="row">
-            <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
-            <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
-          </div>
         </div>
       </section>
 
