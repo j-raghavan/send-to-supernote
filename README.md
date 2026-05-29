@@ -58,25 +58,18 @@ finished upload is treated as a failure.
   in the path, there is **no third-party OAuth** (no `identity` permission), and
   there is no telemetry or analytics.
 
-## Reverse-engineered API risk (read this)
+## Demo Video
 
-There is **no official Ratta developer API**. Both delivery paths use community
-reverse-engineered, **non-contractual** endpoints that can change without notice.
+https://github.com/user-attachments/assets/fe7610c0-ae3f-4669-a57d-5e9dc79645e8
 
-**Shared-auth caveat (R-9):** the public and Private Cloud paths **share the same
-login flow**. So:
-
-- An **auth-scheme change breaks both targets** — Private Cloud is _not_ a
-  fallback for that.
-- Private Cloud is a fallback only for **public-endpoint** issues (the public
-  host/upload changing), and only for users who **self-host**.
-- Non-self-hosters have no fallback (this is the tradeoff of dropping the
-  third-party bridge — D-4).
-
-Mitigations in the build: per-path feature flags (each upload path can be
-disabled independently), a connect-time health check that recommends switching to
-Private Cloud on a public-endpoint failure, and retained-job retry after
-reconnect. None of these survive an auth-scheme change.
+### Steps Shown in this demo
+- Opening the Extension (After installation)
+- Connecting to the SuperNote Cloud
+- Authenticating with SuperNote Cloud
+- Visiting to a Arxiv website to a paper
+- Open the paper in the browser (video shows pdf version, even HTML works fine too)
+- Opening the extension and clicking `Send to Supernote` which is send the complete PDF document over to your Supernote Cloud
+- Once it is on your Supernote Cloud, you can sync that file to your device
 
 ## Build, test, run
 
@@ -116,26 +109,6 @@ docs/
   PRIVACY.md PERMISSIONS.md SECURITY-REVIEW.md SPIKE-F5-FR1.md
 ```
 
-## Deferred before public launch
-
-These require real credentials, a real device, or hosting, so they are run by the
-user/maintainer — not validated in this repo. The code paths are built and
-covered by mocked tests; these are the live confirmation steps:
-
-- **F5-FR1 live integration spike** — pin the working API host + header profile
-  and `countryCode`, and confirm `login → apply → PUT → finish` end-to-end from a
-  real service worker against a real account. See
-  [`docs/SPIKE-F5-FR1.md`](docs/SPIKE-F5-FR1.md).
-- **On-device sync confirmation (both targets)** — confirm a sent file arrives and
-  opens on a real Supernote: via public Cloud (device signed into the same
-  account) and via Private Cloud (device paired to the same self-hosted server).
-  EPUB on-device rendering likewise.
-- **Live network-destination capture** — a real network trace confirming bytes go
-  only to `cloud.supernote.com` (+ Ratta S3) or your own Private Cloud base URL
-  (the mocked-network audits pin this invariant in code; this is the live check).
-- **Privacy Policy URL** — the public policy is [`docs/PRIVACY.md`](docs/PRIVACY.md)
-  rendered on GitHub (the `PRIVACY_POLICY_URL` value); merge this branch to
-  `master` so that URL resolves before the Chrome Web Store listing.
 
 ## License
 
