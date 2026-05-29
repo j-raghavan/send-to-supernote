@@ -7,11 +7,13 @@
  */
 
 /**
- * Intended hosted Privacy Policy URL (F10-FR1). The policy TEXT lives in
- * `docs/PRIVACY.md`; hosting a page at this URL and confirming it is a
- * deferred-to-user deploy step (see docs/PRIVACY.md) before the Web Store listing.
+ * Public Privacy Policy URL for the Web Store listing (F10-FR1): the policy text
+ * rendered on GitHub. Requires `docs/PRIVACY.md` to be on the default branch
+ * (`master`) — merge before submitting. The bundled `src/privacy/privacy.html`
+ * is what the popup/Options "Privacy" links open for offline viewing.
  */
-export const PRIVACY_POLICY_URL = 'https://j-raghavan.github.io/send-to-supernote/privacy';
+export const PRIVACY_POLICY_URL =
+  'https://github.com/j-raghavan/send-to-supernote/blob/master/docs/PRIVACY.md';
 
 /**
  * Path to the privacy page bundled INSIDE the extension. The popup/Options

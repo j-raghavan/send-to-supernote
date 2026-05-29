@@ -1,13 +1,13 @@
 # Privacy Policy — Send to Supernote
 
 - **Last updated:** 2026-05-28
-- **Intended hosted URL:** `https://j-raghavan.github.io/send-to-supernote/privacy`
+- **Public policy URL:** https://github.com/j-raghavan/send-to-supernote/blob/master/docs/PRIVACY.md
   (this exact value is in `src/options/privacy-copy.ts` as `PRIVACY_POLICY_URL`).
 
-> **Deferred deploy step (like the F5-FR1 live spike):** this Markdown is the
-> source of truth for the policy text, but a *hosted* page at the URL above must
-> be published before the Chrome Web Store listing goes live. Hosting the page
-> and confirming the final URL is a deferred-to-user step — see the global DoD.
+> This Markdown, rendered on GitHub, is the public Privacy Policy for the Chrome
+> Web Store listing. It requires this file to be on the default branch (`master`)
+> — merge the feature branch before submitting. The in-extension
+> `src/privacy/privacy.html` mirrors this text for offline viewing.
 
 ## What this extension does
 

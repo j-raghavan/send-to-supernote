@@ -11,6 +11,7 @@ import { ChromeStorageLocal } from '../background/chrome-storage';
 import { ChromePermissionGranter } from '../background/permissions';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
+import { PrivateCloudStore } from '@auth/private-cloud-store';
 import { resolveSessionState } from '@auth/connection-state';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { JobQueue } from '@jobs/job-queue';
@@ -24,6 +25,7 @@ import { PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from '../options/privacy-cop
 
 const store = new ChromeStorageLocal();
 const tokens = new TokenStore(store);
+const privateStore = new PrivateCloudStore(store);
 const settings = new SettingsStore(store);
 
 function byId<T extends HTMLElement>(id: string): T | null {
@@ -107,10 +109,15 @@ async function requestCloudConnect(): Promise<{ ok: boolean; pending: boolean; r
 
 async function render(): Promise<void> {
   const current = await settings.get();
-  // A persisted "expired" flag keeps the expired state visible across reopens (F2-FR6).
-  const expired = (await store.get<boolean>(StorageKeys.sessionExpired)) === true;
-  const session = await resolveSessionState(tokens, expired);
-  const account = await tokens.getAccount();
+  // Resolve "connected" for the ACTIVE target — a Private Cloud-only user has no
+  // public token, so the popup must check the private JWT (F8 use case #8). The
+  // per-target expired flag keeps the expired state visible across reopens (F2-FR6).
+  const isPrivate = current.target === 'privatecloud';
+  const tokenSource = isPrivate ? privateStore : tokens;
+  const expiredKey = isPrivate ? StorageKeys.privateSessionExpired : StorageKeys.sessionExpired;
+  const expired = (await store.get<boolean>(expiredKey)) === true;
+  const session = await resolveSessionState(tokenSource, expired);
+  const account = isPrivate ? await privateStore.getAccount() : await tokens.getAccount();
   const view = buildPopupView(session, account, current);
 
   const logo = byId<HTMLImageElement>('logo');

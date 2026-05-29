@@ -46,10 +46,12 @@ export const PUBLIC_CLOUD_KEYS: readonly string[] = [
   StorageKeys.token,
   StorageKeys.account,
   StorageKeys.equipment,
+  StorageKeys.sessionExpired,
 ];
 
 /** Keys that hold a Private-Cloud credential, cleared on its Disconnect (F8-FR5). */
 export const PRIVATE_CLOUD_KEYS: readonly string[] = [
   StorageKeys.privateToken,
   StorageKeys.privateAccount,
+  StorageKeys.privateSessionExpired,
 ];

@@ -29,9 +29,13 @@ export interface ReflectParams {
   jobInFlight?: boolean;
 }
 
-/** Resolve the session state from stored credentials and the transient flags. */
+/**
+ * Resolve the session state from a token source + the transient expired flag.
+ * Accepts any `{ getToken }` source so it serves BOTH the public TokenStore and
+ * the Private Cloud store (popup resolves whichever target is active).
+ */
 export async function resolveSessionState(
-  tokens: TokenStore,
+  tokens: Pick<TokenStore, 'getToken'>,
   expired = false,
 ): Promise<SessionState> {
   if (expired) {

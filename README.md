@@ -1,34 +1,37 @@
 # Send to Supernote
 
-A Manifest V3 Chrome extension that captures the current web page, converts it to
-a PDF (or EPUB) **entirely on your device**, and delivers it to your Supernote
-(Ratta) tablet — either via the public Supernote Cloud or your own self-hosted
-Supernote Private Cloud. A single toolbar click or right-click sends the page;
+A Manifest V3 Chrome extension that captures the current web page as a clean,
+reflow-friendly **EPUB** (or PDF) **entirely on your device** — or, when the page
+is already a PDF, sends it through as-is — and delivers it to your Supernote
+(Ratta) tablet via the public Supernote Cloud or your own self-hosted Supernote
+Private Cloud. Click the toolbar icon (or right-click → **Send to Supernote**);
 the file appears on the tablet after the device runs its next sync (timing is
 user/network-dependent, not real-time). Inspired by reMarkable's "Read on
 reMarkable", but the conversion happens client-side (Ratta has no conversion
 service).
 
-## Capture modes
+## What it sends
 
-- **Reader View** — extracts the article with Mozilla Readability (on a _clone_
-  of the page, never mutating it) and renders a clean, reflow-friendly,
-  **paginated PDF** (or a reflowable **EPUB**). Recommended for text. If a page
-  isn't an article, you get an actionable "try Full Page" message instead of an
-  empty document.
-- **Full Page** — a **best-effort** capture of the rendered page via
-  `html2canvas` → paginated PDF. Layout is preserved as far as client-side
-  rasterization allows; this is explicitly best-effort fidelity (R-3) — a
-  server-side high-fidelity render is a deferred phase, not part of this MVP.
+- **Reader (default)** — extracts the article with Mozilla Readability (on a
+  _clone_ of the page, never mutating it) and renders a clean, reflow-friendly
+  **EPUB** (or a paginated **PDF**). If a page isn't a clean article, it falls
+  back to the page body (scripts/styles stripped) so you still get a document
+  rather than an empty one.
+- **PDF pass-through** — a page that is _already_ a PDF (e.g. an arXiv paper in
+  the browser's PDF viewer) is uploaded **as-is**, with no capture or conversion.
+
+One toolbar/right-click action handles both — there is no mode to choose.
 
 ## Delivery targets
 
 Both targets are inside the Supernote ecosystem; there is **no third-party
 bridge** (no Dropbox/Drive).
 
-- **Supernote Cloud (primary)** — the reverse-engineered upload flow: `login →
-apply → PUT bytes to the pre-signed S3 URL Supernote's API issues → finish`.
-  Serves all users.
+- **Supernote Cloud (primary)** — sign in on Supernote's **own** login page
+  (it handles the CAPTCHA and any verification code); the extension captures the
+  resulting `x-access-token` session cookie and never sees your password. Upload
+  is the reverse-engineered `apply → PUT bytes to the pre-signed S3 URL
+Supernote's API issues → finish`. Serves all users.
 - **Supernote Private Cloud (alternative, self-hosted)** — upload to _your own_
   server at a base URL you configure (e.g. `http://192.168.x.x:8080` on a LAN, or
   an HTTPS reverse-proxy host). The flow differs only in the upload step:
@@ -41,12 +44,14 @@ finished upload is treated as a failure.
 
 ## Credentials & data flow
 
-- **Token-only storage (D-2).** Only the derived access token (a JWT for Private
-  Cloud) is persisted, in `chrome.storage.local` (never `chrome.storage.sync`).
-  Your **password is never stored or logged** — it's used in memory only to
-  compute the login hash, then discarded. On an expired/invalid token
-  (`401` _or_ the application-level `E0401` envelope at HTTP 200) you're
-  re-prompted; there is no silent re-login.
+- **Token-only storage (D-2).** Only the access token (the Cloud session token,
+  or a JWT for Private Cloud) is persisted, in `chrome.storage.local` (never
+  `chrome.storage.sync`). Your **password is never stored or logged**: for
+  Supernote Cloud the extension never sees it (you sign in on Supernote's page —
+  only the session cookie is read); for Private Cloud it's used in memory only to
+  compute the login hash, then discarded. On an expired/invalid token (`401` _or_
+  the application-level `E0401` envelope at HTTP 200) you're re-prompted; there is
+  no silent re-login.
 - **Zero-intermediary, no third party (D-3).** Page content is converted locally
   and uploaded **only** to your chosen target — `cloud.supernote.com` (+ Ratta's
   own S3) or your own Private Cloud server. No server operated by this project is
@@ -96,15 +101,15 @@ are kept logic-free. The single `fetch` lives in one adapter; all storage is
 src/
   domain/       # pure values + rules (auth hash, delivery envelopes, job FSM, settings, ...)
   shared/       # ports, Result, md5, filename rules, logger, feature flags
-  auth/         # shared login routine, token stores, connect/disconnect, auth-failure handling
-  capture/      # Reader / Full Page capture use cases + triggers + copy
+  auth/         # login routine (Private Cloud), token stores, cookie-capture Cloud connect, disconnect, auth-failure handling
+  capture/      # Reader capture use case + context-menu triggers + copy
   conversion/   # render-document, image inlining, EPUB builder, render routing
   delivery/     # DeliveryPort + public-cloud / private-cloud adapters + resolve-target + fallback
   jobs/         # the send-job saga, queue, retry, health check, history
   settings/     # settings store, folder picker, onboarding copy
   options/ popup/  # UI shells + covered view-models
   background/   # service-worker composition root + thin chrome.* / fetch adapters
-  content/ offscreen/  # thin DOM/render shells (Readability, jsPDF, html2canvas, jszip)
+  content/ offscreen/  # thin DOM/render shells (Readability, jsPDF, jszip)
 docs/
   ddd/architecture.md   # the architecture + FR→module→commit plan
   adr/*.md              # decision records (hexagonal, toolchain, login routine, delivery port, ...)
@@ -128,9 +133,9 @@ covered by mocked tests; these are the live confirmation steps:
 - **Live network-destination capture** — a real network trace confirming bytes go
   only to `cloud.supernote.com` (+ Ratta S3) or your own Private Cloud base URL
   (the mocked-network audits pin this invariant in code; this is the live check).
-- **Host the Privacy Policy page** at the pinned URL in
-  [`docs/PRIVACY.md`](docs/PRIVACY.md) and confirm the final URL before the
-  Chrome Web Store listing.
+- **Privacy Policy URL** — the public policy is [`docs/PRIVACY.md`](docs/PRIVACY.md)
+  rendered on GitHub (the `PRIVACY_POLICY_URL` value); merge this branch to
+  `master` so that URL resolves before the Chrome Web Store listing.
 
 ## License
 
