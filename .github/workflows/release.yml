@@ -1,11 +1,15 @@
 name: Release
 
-# Fires on EITHER a pushed SemVer tag OR a published GitHub Release (plus manual
-# dispatch). The manifest version is sourced from package.json, so the clean
-# flow is:
-#   npm version <patch|minor|major>   # bumps package.json + commits + tags vX.Y.Z
-#   git push --follow-tags            # -> this workflow builds + publishes
-# Or: publish a Release in the GitHub UI for an existing vX.Y.Z tag.
+# Three ways to cut a release. The manifest version is sourced from
+# package.json (single SemVer source of truth), so the version always flows
+# through to the built manifest and the tag.
+#
+#   1. Manual dispatch (one-button): pick a bump level in the Actions UI and CI
+#      bumps package.json, commits, tags vX.Y.Z, pushes, then builds + publishes.
+#   2. Push a SemVer tag:
+#        npm version <patch|minor|major>   # bumps + commits + tags vX.Y.Z
+#        git push --follow-tags            # -> CI builds + publishes
+#   3. Publish a Release in the GitHub UI for an existing vX.Y.Z tag.
 on:
   push:
     tags: ['v*.*.*']
@@ -13,15 +17,18 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing version tag to build (e.g. v0.2.0)'
+      bump:
+        description: 'Version bump applied to package.json'
         required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write # create/update the Release, upload assets, push CHANGELOG
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -37,10 +44,14 @@ jobs:
       tag: ${{ steps.ver.outputs.tag }}
       version: ${{ steps.ver.outputs.version }}
     steps:
-      - name: Checkout the tagged commit
+      # Dispatch bumps + tags on the default branch, so it needs that branch
+      # with full history and push credentials. Tag-push / published-release
+      # builds check out the immutable tagged commit instead.
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.event.release.tag_name || github.ref }}
+          fetch-depth: 0
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
@@ -54,15 +65,28 @@ jobs:
       - name: Resolve and validate version (SemVer + Chrome constraints)
         id: ver
         run: |
-          TAG="${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}"
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # One-button release: bump package.json, commit, tag vX.Y.Z, and push
+            # to the default branch. The tag is pushed with GITHUB_TOKEN, which
+            # does not re-trigger this workflow, so the same run continues to
+            # build + publish (no double run).
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            npm version "${{ github.event.inputs.bump }}" -m "chore(release): v%s"
+            TAG="v$(jq -r '.version' package.json)"
+            git push origin "HEAD:${{ github.event.repository.default_branch }}" --follow-tags
+          else
+            TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          fi
           TAG="${TAG#refs/tags/}"
           VER="${TAG#v}"
           PKG="$(jq -r '.version' package.json)"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "Release tag=$TAG  version=$VER  package.json=$PKG"
+          echo "Release tag=$TAG  version=$VER  package.json=$PKG  (event=${{ github.event_name }})"
           if [ "$VER" != "$PKG" ]; then
-            echo "::error::Tag version ($VER) != package.json version ($PKG). Bump with 'npm version <patch|minor|major>' (it also tags), then 'git push --follow-tags'."
+            echo "::error::Tag version ($VER) != package.json version ($PKG). For tag/release triggers, bump with 'npm version <patch|minor|major>' (it also tags), then 'git push --follow-tags'."
             exit 1
           fi
           if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
