@@ -94,7 +94,7 @@ ports or published types, never by reaching into another context's internals.
 | Context | Responsibility | Spec features |
 |---------|----------------|---------------|
 | **auth** | Shared login routine, token lifecycle, `401`/`E0401` handling for both targets | F2 (and reused by F8) |
-| **capture** | Reader View extraction + Full Page serialization on a DOM clone | F3, F4 |
+| **capture** | Reader extraction on a DOM clone (Readability) | F3 |
 | **conversion** | Offscreen render of captured HTML → PDF/EPUB blob | F3, F4 (offscreen side) |
 | **delivery** | `DeliveryPort` + two adapters (publicCloud, privateCloud) + folder listing + fallback | F5, F8 |
 | **jobs** | Send-job saga, queue, persistence, retry, TTL, per-path feature flags, health check | F9 (+ orchestrates F2/F5/F8) |
@@ -146,7 +146,6 @@ src/
     disconnect.ts             # Disconnect (F2-FR5)
   capture/
     capture-reader.ts         # CaptureReader use case → ExtractorPort (F3)
-    capture-fullpage.ts       # CaptureFullPage use case → ExtractorPort (F4)
   conversion/
     render-document.ts        # RenderDocument use case → RendererPort (F3-FR2/FR3, F4-FR2)
   delivery/
@@ -177,14 +176,13 @@ src/
     permissions.ts            # PermissionGranter impl over chrome.permissions (F8-FR1)
     scripting.ts              # inject content scripts via chrome.scripting (F3/F4)
   content/
-    reader.ts                 # ExtractorPort impl: Readability on a document CLONE (F3-FR1, I-4)
-    fullpage.ts               # ExtractorPort impl: serialize rendered DOM+styles (F4-FR2/FR3)
+    reader.ts                 # Readability on a document CLONE, run in the offscreen doc (F3-FR1, I-4)
   offscreen/
     offscreen.html
-    offscreen.ts              # RendererPort impl host: routes to pdf/epub/raster
-    pdf-renderer.ts           # html→PDF via jspdf (F3-FR2, F4-FR2)
-    epub-renderer.ts          # html→EPUB via jszip (F3-FR3) [gated by R-6 decision]
-    canvas-raster.ts          # html2canvas rasterize for full page (F4-FR2/FR4)
+    offscreen.ts              # RendererPort host: routes to pdf/epub + runs Readability (F3-FR1)
+    offscreen-reader.ts       # SW→offscreen bridge that parses page HTML + extracts the article
+    pdf-renderer.ts           # html→PDF via jspdf (F3-FR2)
+    epub-renderer.ts          # html→EPUB via jszip (F3-FR3)
   options/
     options.html
     options.ts                # Options shell: connection, defaults, folder picker, priv cloud (F7)
@@ -221,7 +219,7 @@ inject fakes, and the real `chrome.*`/`fetch` adapters stay thin.
 | `Notifier` | `notify(level, title, msg, action?)` | `notifications.ts` | recorder |
 | `Badge` | `set(state)` (`idle/busy/error/expired`) | `badge.ts` | recorder |
 | `Renderer` | `render(html, format, opts): Promise<BlobHandle>` | offscreen `offscreen.ts` (via manager) | returns canned handle |
-| `Extractor` | `extractReader()/serializeFullPage()` | content `reader.ts`/`fullpage.ts` | canned HTML |
+| `Extractor` | `extractReader()` | `scripting-extractor.ts` + `content/reader.ts` (run in the offscreen doc) | canned HTML |
 | `BlobTransfer` | `put(bytes): handle`, `get(handle): bytes`, `delete(handle)` | `blob-transfer.ts` (IndexedDB) | in-memory |
 | `PermissionGranter` | `request(origin): Promise<boolean>` | `permissions.ts` | always-grant / deny toggle |
 | `Clock` | `now(): number` | wraps `Date.now` | fixed time (TTL/dedupe tests) |

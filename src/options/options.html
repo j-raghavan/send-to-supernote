@@ -64,7 +64,10 @@
       <!-- Private Cloud panel -->
       <div id="private-panel" hidden>
         <section id="privatecloud-section" class="card">
-          <div class="card__head"><h2>Private Cloud</h2></div>
+          <div class="card__head">
+            <h2>Private Cloud</h2>
+            <span id="pc-connection-status" class="card__hint">Not connected</span>
+          </div>
           <div class="stack">
             <input
               id="pc-base-url"
@@ -94,6 +97,7 @@
               <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
               <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
             </div>
+            <p class="muted">Sends go to your <strong>Document/</strong> folder.</p>
           </div>
         </section>
       </div>
@@ -109,10 +113,6 @@
               <option value="pdf">PDF</option>
             </select>
           </div>
-          <label class="check">
-            <input id="confirm-filename" type="checkbox" />
-            Confirm the filename before each send
-          </label>
         </div>
       </section>
 

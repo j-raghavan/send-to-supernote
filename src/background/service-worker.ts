@@ -441,6 +441,24 @@ chrome.cookies.onChanged.addListener((change) => {
   void onCloudCookieSet();
 });
 
+// Fallback trigger: cookies.onChanged doesn't reliably wake the MV3 service
+// worker during a slow (captcha/code) sign-in. When the pending login tab
+// settles — a full load OR a SPA hash route change after login — try to
+// finalize too. tabs.onUpdated reliably wakes the SW, so the tab gets closed.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete' && changeInfo.url === undefined) {
+    return;
+  }
+  void finalizePendingConnectForTab(tabId);
+});
+
+async function finalizePendingConnectForTab(tabId: number): Promise<void> {
+  const pendingTabId = await store.get<number>(StorageKeys.cloudConnectTabId);
+  if (pendingTabId === tabId) {
+    await onCloudCookieSet();
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   registerContextMenus();
   void pruneStaleJobs();

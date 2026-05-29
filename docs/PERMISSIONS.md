@@ -9,11 +9,11 @@ are **no unused permissions**. The extension requests **no `debugger`**, **no
 | Permission | Why it is needed | Feature |
 |---|---|---|
 | `activeTab` | Read the active tab (URL/title) and inject the capture script on the user's click — instead of broad host access. | F3/F4 capture, F6 send |
-| `scripting` | Inject the Reader/Full-Page extractor into the active tab via `chrome.scripting.executeScript`. | F3-FR1, F4-FR2 |
+| `scripting` | Capture the active tab's HTML (and detect a PDF page) via `chrome.scripting.executeScript`, for Reader extraction and PDF pass-through. | F3-FR1 |
 | `contextMenus` | Add the right-click "Send to Supernote" item. | F6-FR2 |
 | `storage` | Persist the session token, settings, destination folder, and local send history in `chrome.storage.local` (never `.sync`). | F2, F7, F9, Data Model |
 | `notifications` | Show progress (capturing → uploading → done), the success "sync your device" toast, and actionable failures (incl. the Private Cloud fallback offer). | F6-FR5, F9-FR2 |
-| `offscreen` | Run DOM-dependent rendering (HTML → PDF/EPUB / `html2canvas`) in an offscreen document, since the MV3 service worker has no DOM. | F1-FR5, F3, F4 |
+| `offscreen` | Run DOM-dependent work (Readability extraction + HTML → EPUB/PDF rendering) in an offscreen document, since the MV3 service worker has no DOM. | F1-FR5, F3 |
 | `cookies` | Read the `x-access-token` session cookie that `cloud.supernote.com` sets **after the user signs in on Supernote's own page** — public Cloud login is CAPTCHA/2FA-gated, so the extension never logs in itself. Scoped by host_permissions to the Supernote hosts; the token is stored locally only and goes only to the Supernote API (D-3). | F2 (Cloud connect) |
 | `declarativeNetRequestWithHostAccess` | Strip the browser `Origin` header on requests to the Supernote API hosts only — the F5-FR1 spike found `viewer.supernote.com` returns HTTP 403 when an `Origin` header is present. Host-scoped (uses host_permissions), not the broad `declarativeNetRequest`. Keeps the flow client-side (D-3). | F5-FR1 (spike), F5 |
 

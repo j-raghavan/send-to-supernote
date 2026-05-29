@@ -53,10 +53,11 @@ third-party OAuth (no `identity` permission).
 
 ## 3. No runtime remote code (F10-FR4)
 
-All conversion libraries (`@mozilla/readability`, `jspdf`, `html2canvas`,
-`jszip`) are bundled by Vite and imported by module specifier — never fetched at
-runtime. Enforced by `tests/unit/guards/no-remote-code.test.ts` (no remote
-`<script src>`, no URL `import()`).
+All conversion libraries (`@mozilla/readability`, `jspdf`, `jszip` — plus
+`html2canvas`, which `jspdf.html()` pulls in transitively) are bundled by Vite
+and imported by module specifier — never fetched at runtime. Enforced by
+`tests/unit/guards/no-remote-code.test.ts` (no remote `<script src>`, no URL
+`import()`).
 
 ## 4. HTTP-over-LAN for Private Cloud (R-10)
 

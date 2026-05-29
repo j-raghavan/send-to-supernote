@@ -14,6 +14,7 @@ import { webCryptoSha256Hex } from '../background/crypto';
 import { SystemClock } from '../background/clock';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
+import { PrivateCloudStore } from '@auth/private-cloud-store';
 import { resolveSessionState } from '@auth/connection-state';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
@@ -31,6 +32,7 @@ import { buildOptionsView, parseFormatChange } from './options-view-model';
 const store = new ChromeStorageLocal();
 const settings = new SettingsStore(store);
 const tokens = new TokenStore(store);
+const privateStore = new PrivateCloudStore(store);
 
 function byId<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -62,6 +64,19 @@ async function render(): Promise<void> {
   const chip = byId('account-chip');
   if (chip) chip.textContent = view.account ?? 'Connected to Supernote Cloud';
 
+  // Reflect the Private Cloud session in its own panel (target-aware, like the popup).
+  const pcExpired = (await store.get<boolean>(StorageKeys.privateSessionExpired)) === true;
+  const pcSession = await resolveSessionState(privateStore, pcExpired);
+  const pcStatus = byId('pc-connection-status');
+  if (pcStatus) {
+    pcStatus.textContent =
+      pcSession === 'connected'
+        ? 'Connected'
+        : pcSession === 'expired'
+          ? 'Session expired — reconnect'
+          : 'Not connected';
+  }
+
   const format = byId<HTMLSelectElement>('default-format');
   if (format) {
     format.value = view.defaultFormat;
@@ -74,14 +89,6 @@ async function render(): Promise<void> {
   }
 
   wireProviderTabs(view.target);
-
-  const confirm = byId<HTMLInputElement>('confirm-filename');
-  if (confirm) {
-    confirm.checked = view.confirmFilename;
-    confirm.addEventListener('change', () => {
-      void settings.setConfirmFilename(confirm.checked);
-    });
-  }
 
   if (view.canPickCloudFolder) {
     await renderFolderPicker(current.target);
