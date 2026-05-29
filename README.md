@@ -63,6 +63,7 @@ finished upload is treated as a failure.
 https://github.com/user-attachments/assets/fe7610c0-ae3f-4669-a57d-5e9dc79645e8
 
 ### Steps Shown in this demo
+
 - Opening the Extension (After installation)
 - Connecting to the SuperNote Cloud
 - Authenticating with SuperNote Cloud
@@ -108,7 +109,6 @@ docs/
   adr/*.md              # decision records (hexagonal, toolchain, login routine, delivery port, ...)
   PRIVACY.md PERMISSIONS.md SECURITY-REVIEW.md SPIKE-F5-FR1.md
 ```
-
 
 ## License
 
