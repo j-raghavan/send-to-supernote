@@ -18,7 +18,11 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 const NOW_MS = 1_780_000_000_000;
-const FUTURE_EXP = Math.floor(NOW_MS / 1000) + 86_400; // +1 day
+// Far enough ahead that the un-injected `Date.now()` path (the "defaults the
+// clock" test) stays valid for years — a +1-day offset from the fixed NOW_MS
+// elapsed in real time on 2026-05-29 and broke that test. Still > NOW_MS, so
+// the injected-clock assertions are unaffected.
+const FUTURE_EXP = Math.floor(NOW_MS / 1000) + 10 * 365 * 86_400; // +10 years
 const PAST_EXP = Math.floor(NOW_MS / 1000) - 10;
 
 describe('decodeAccessToken', () => {
