@@ -49,6 +49,9 @@ async function render(): Promise<void> {
   const status = byId('connection-status');
   if (status) {
     status.textContent = view.connectionStatus;
+    // When connected, the panel below already shows the state — avoid a redundant
+    // (and previously contradictory) header chip.
+    status.hidden = view.connected;
   }
 
   // Toggle the Supernote Cloud connected vs disconnected panels.

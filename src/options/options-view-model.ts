@@ -38,12 +38,13 @@ export function buildOptionsView(
   settings: Settings,
 ): OptionsView {
   const connected = session === 'connected';
-  const connectionStatus =
-    connected && account !== undefined
+  const connectionStatus = connected
+    ? account !== undefined
       ? `Connected as ${account}`
-      : session === 'expired'
-        ? 'Session expired — reconnect'
-        : 'Not connected';
+      : 'Connected to Supernote Cloud'
+    : session === 'expired'
+      ? 'Session expired — reconnect'
+      : 'Not connected';
   return {
     connectionStatus,
     connected,

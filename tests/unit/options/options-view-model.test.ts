@@ -27,6 +27,12 @@ describe('buildOptionsView (F7-FR1)', () => {
     expect(view.canPickCloudFolder).toBe(true);
   });
 
+  it('shows a generic connected status when no email is known (cookie-capture cloud connect)', () => {
+    const view = buildOptionsView('connected', undefined, settings);
+    expect(view.connected).toBe(true);
+    expect(view.connectionStatus).toBe('Connected to Supernote Cloud');
+  });
+
   it('reports expired and disconnected states', () => {
     expect(buildOptionsView('expired', 'me@x.com', settings).connectionStatus).toContain('expired');
     expect(buildOptionsView('disconnected', undefined, settings).connectionStatus).toBe(
