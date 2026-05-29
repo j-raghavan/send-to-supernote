@@ -13,6 +13,9 @@ import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
+import { JobQueue } from '@jobs/job-queue';
+import { SystemClock } from '../background/clock';
+import { StorageKeys } from '@shared/storage-keys';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import type { Target } from '@domain/settings';
@@ -104,7 +107,9 @@ async function requestCloudConnect(): Promise<{ ok: boolean; pending: boolean; r
 
 async function render(): Promise<void> {
   const current = await settings.get();
-  const session = await resolveSessionState(tokens);
+  // A persisted "expired" flag keeps the expired state visible across reopens (F2-FR6).
+  const expired = (await store.get<boolean>(StorageKeys.sessionExpired)) === true;
+  const session = await resolveSessionState(tokens, expired);
   const account = await tokens.getAccount();
   const view = buildPopupView(session, account, current);
 
@@ -146,10 +151,14 @@ function renderConnected(account: string | undefined, target: Target): void {
   byId<HTMLButtonElement>('send')?.addEventListener('click', () => void runSendFromPopup(target));
 
   byId('signout')?.addEventListener('click', () => {
+    const queue = new JobQueue(store, new SystemClock());
     const done =
       target === 'privatecloud'
-        ? disconnectPrivateCloud({ store })
-        : disconnectPublicCloud({ store });
+        ? disconnectPrivateCloud({
+            store,
+            clearPendingJobs: () => queue.clearTarget('privatecloud'),
+          })
+        : disconnectPublicCloud({ store, clearPendingJobs: () => queue.clearTarget('cloud') });
     void done.then(() => render());
   });
 }

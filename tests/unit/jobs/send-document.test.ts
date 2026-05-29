@@ -235,6 +235,43 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(h.options.opens).toEqual(['me@x.com']);
   });
 
+  it('retains the converted job on auth failure so reconnect can replay it (F9-AC1)', async () => {
+    h.port.uploadResult = err({ kind: 'auth', errorCode: 'E0401', message: 'expired' });
+    const retained: Array<{ target: string; fileName: string; blobHandle: string }> = [];
+    h.deps.retainJob = (job) => {
+      retained.push(job);
+      return Promise.resolve();
+    };
+
+    await sendDocument(h.deps, req());
+
+    expect(retained).toHaveLength(1);
+    expect(retained[0]!.target).toBe('cloud');
+    // The blob handle is preserved (not cleaned up) so RetryPending can resume it.
+    expect(retained[0]!.blobHandle.length).toBeGreaterThan(0);
+    expect(await h.blobs.get(retained[0]!.blobHandle)).toBeDefined();
+  });
+
+  it('retains a source (PDF) job on auth failure by persisting its bytes (F9-AC1)', async () => {
+    h.port.uploadResult = err({ kind: 'auth', errorCode: 'E0401', message: 'expired' });
+    const retained: Array<{ blobHandle: string }> = [];
+    h.deps.retainJob = (job) => {
+      retained.push(job);
+      return Promise.resolve();
+    };
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+
+    await sendDocument(
+      h.deps,
+      req({ format: 'pdf', source: { bytes, contentType: 'application/pdf', title: 'paper' } }),
+    );
+
+    // No render blob existed; the source bytes were stored so retry can resume.
+    expect(retained).toHaveLength(1);
+    const stored = await h.blobs.get(retained[0]!.blobHandle);
+    expect(stored?.bytes).toEqual(bytes);
+  });
+
   it('labels the auth re-prompt "Private Cloud" when targeting Private Cloud (F8 reuse)', async () => {
     h.port.uploadResult = err({ kind: 'auth', errorCode: 'E0401', message: 'expired' });
     await sendDocument(h.deps, req({ target: 'privatecloud' }));

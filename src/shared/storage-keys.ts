@@ -29,6 +29,10 @@ export const StorageKeys = {
   privateToken: 'privatecloud.token',
   privateFolderId: 'privatecloud.folderId',
 
+  /** Per-target "session expired" flags so the expired state survives a popup reopen (F2-FR6). */
+  sessionExpired: 'supernote.sessionExpired',
+  privateSessionExpired: 'privatecloud.sessionExpired',
+
   // Jobs (F9).
   pendingJobs: 'jobs.pending',
   jobHistory: 'jobs.history',

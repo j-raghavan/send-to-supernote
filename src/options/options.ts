@@ -11,11 +11,14 @@ import { ChromeStorageLocal } from '../background/chrome-storage';
 import { FetchHttpClient } from '../background/fetch-http-client';
 import { ChromePermissionGranter } from '../background/permissions';
 import { webCryptoSha256Hex } from '../background/crypto';
+import { SystemClock } from '../background/clock';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
+import { JobQueue } from '@jobs/job-queue';
+import { StorageKeys } from '@shared/storage-keys';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
@@ -35,7 +38,8 @@ function byId<T extends HTMLElement>(id: string): T | null {
 
 async function render(): Promise<void> {
   const current = await settings.get();
-  const session = await resolveSessionState(tokens);
+  const expired = (await store.get<boolean>(StorageKeys.sessionExpired)) === true;
+  const session = await resolveSessionState(tokens, expired);
   const account = await tokens.getAccount();
   const view = buildOptionsView(session, account, current);
 
@@ -125,7 +129,11 @@ function wireConnection(): void {
   });
 
   byId<HTMLButtonElement>('disconnect')?.addEventListener('click', () => {
-    void disconnectPublicCloud({ store }).then(() => render());
+    const queue = new JobQueue(store, new SystemClock());
+    void disconnectPublicCloud({
+      store,
+      clearPendingJobs: () => queue.clearTarget('cloud'),
+    }).then(() => render());
   });
 }
 
@@ -172,7 +180,11 @@ function wirePrivateCloud(): void {
   });
 
   byId<HTMLButtonElement>('pc-disconnect')?.addEventListener('click', () => {
-    void disconnectPrivateCloud({ store }).then(() => render());
+    const queue = new JobQueue(store, new SystemClock());
+    void disconnectPrivateCloud({
+      store,
+      clearPendingJobs: () => queue.clearTarget('privatecloud'),
+    }).then(() => render());
   });
 }
 

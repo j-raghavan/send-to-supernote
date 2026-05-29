@@ -14,6 +14,7 @@ import { resolveSendRequest } from '@jobs/resolve-send-request';
 import { JobQueue } from '@jobs/job-queue';
 import { JobHistory } from '@jobs/job-history';
 import { retryPending } from '@jobs/retry-pending';
+import { runHealthCheck } from '@jobs/health-check';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { PrivateCloudStore } from '@auth/private-cloud-store';
@@ -63,6 +64,8 @@ const history = new JobHistory(store, clock);
 
 interface SendContext {
   tabId: number;
+  /** The target this send goes to (drives target-aware auth-failure handling). */
+  target: Target;
   cloudToken: string;
   account?: string;
   privateCloud?: PrivateTargetConfig;
@@ -92,8 +95,12 @@ function buildDeps(ctx: SendContext): SendDocumentDeps {
     hasToken: (target: Target) => hasToken(target),
     flags: ctx.flags,
     ...(ctx.account !== undefined ? { account: ctx.account } : {}),
+    // Retain the converted job so reconnect replays it (F9-FR1).
+    retainJob: (job) => queue.enqueue({ id: random.uuid(), ...job }),
     authDeps: {
-      clearToken: () => tokens.clearToken(),
+      // Clear the FAILING target's token (F8-FR6 parity with F2-FR4) and mark it
+      // expired so the popup/Options still show "expired" after a reopen (F2-FR6).
+      clearToken: () => clearTargetToken(ctx.target),
       notifier,
       options: new ChromeOptionsOpener(),
     },
@@ -116,14 +123,36 @@ async function hasToken(target: Target): Promise<boolean> {
   return token !== undefined && token.length > 0;
 }
 
+function expiredFlagKey(target: Target): string {
+  return target === 'privatecloud' ? StorageKeys.privateSessionExpired : StorageKeys.sessionExpired;
+}
+
+/** Clear the failing target's token and mark its session expired (F2-FR4/F8-FR6/F2-FR6). */
+async function clearTargetToken(target: Target): Promise<void> {
+  if (target === 'privatecloud') {
+    await privateStore.clearToken();
+  } else {
+    await tokens.clearToken();
+  }
+  await store.set(expiredFlagKey(target), true);
+}
+
+/** Clear a target's "expired" flag after a successful (re)connect. */
+async function clearExpiredFlag(target: Target): Promise<void> {
+  await store.remove(expiredFlagKey(target));
+}
+
 async function runSend(
   tabId: number,
   hostname: string,
   mode?: CaptureMode,
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
+  const target = settings.target;
   const cloudToken = (await tokens.getToken()) ?? '';
-  const account = await tokens.getAccount();
+  // Prefill the reconnect form with the FAILING target's account (F2-FR4/F8-FR6).
+  const account =
+    target === 'privatecloud' ? await privateStore.getAccount() : await tokens.getAccount();
   const pcBaseUrl = await privateStore.getBaseUrl();
   const pcToken = await privateStore.getToken();
   const privateCloud =
@@ -134,6 +163,7 @@ async function runSend(
   const flags = normalizeFlags(await store.get(StorageKeys.featureFlags));
   const deps = buildDeps({
     tabId,
+    target,
     cloudToken,
     flags,
     ...(account !== undefined ? { account } : {}),
@@ -254,6 +284,41 @@ async function retryAfterReconnect(target: Target): Promise<void> {
   );
 }
 
+/**
+ * Best-effort connect-time health check (F9-FR3): a cheap authenticated call;
+ * if the public-Cloud endpoint looks changed AND a Private Cloud is configured,
+ * advise switching. Never blocks/breaks connect.
+ */
+async function healthCheckOnConnect(target: Target): Promise<void> {
+  try {
+    const cloudToken = (await tokens.getToken()) ?? '';
+    const pcBaseUrl = await privateStore.getBaseUrl();
+    const pcToken = await privateStore.getToken();
+    const privateCloud =
+      pcBaseUrl !== undefined && pcToken !== undefined
+        ? { baseUrl: pcBaseUrl, token: pcToken }
+        : undefined;
+    const port = deliveryFactory({
+      cloudToken,
+      ...(privateCloud !== undefined ? { privateCloud } : {}),
+    })(target);
+    const result = await runHealthCheck(
+      { port, privateCloudConfigured: privateCloud !== undefined },
+      target,
+    );
+    if (!result.healthy && result.recommendPrivateCloud) {
+      await notifier.notify({
+        level: 'error',
+        title: 'Supernote Cloud may be unavailable',
+        message:
+          'The Cloud endpoint did not respond as expected — consider Private Cloud in Settings.',
+      });
+    }
+  } catch {
+    // Health check is advisory only; never block connect on it.
+  }
+}
+
 /** Prune stale pending jobs and free their blobs (F9-FR5). */
 async function pruneStaleJobs(): Promise<void> {
   const pruned = await queue.prune();
@@ -300,7 +365,9 @@ async function handlePrivateConnect(
       return { ok: false, error: result.error.message, detail: formatLoginError(result.error) };
     }
     await settingsStore.setTarget('privatecloud');
+    await clearExpiredFlag('privatecloud');
     await retryAfterReconnect('privatecloud');
+    await healthCheckOnConnect('privatecloud');
     return { ok: true };
   } catch (thrown) {
     const message = thrown instanceof Error ? thrown.message : String(thrown);
@@ -320,8 +387,10 @@ async function finalizeCloudCapture(): Promise<boolean> {
     return false;
   }
   await settingsStore.setTarget('cloud');
+  await clearExpiredFlag('cloud');
   await retryAfterReconnect('cloud');
   await reflectConnectionState({ tokens, badge });
+  await healthCheckOnConnect('cloud');
   return true;
 }
 
@@ -382,11 +451,8 @@ chrome.runtime.onStartup.addListener(() => {
   void pruneStaleJobs();
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.id !== undefined) {
-    void runSend(tab.id, hostnameOf(tab.url));
-  }
-});
+// No chrome.action.onClicked handler: the manifest sets a default_popup, so the
+// toolbar click opens the popup (with its Send button) and onClicked never fires.
 
 onContextMenuClicked((mode) => {
   void sendActiveTab(mode);

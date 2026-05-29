@@ -4,8 +4,8 @@
  * Sequence (driving the domain/job.ts FSM, I-3):
  *   queued
  *   -> ensure token (no token -> notify "connect first", abort)
- *   -> capturing  (reader|fullpage on a clone; empty reader -> "try Full Page")
- *   -> converting (offscreen render -> blob handle)
+ *   -> source? upload bytes as-is (PDF page) : capture (reader, page-body fallback)
+ *   -> converting (offscreen render -> blob handle; skipped for a source upload)
  *   -> hashing    (read bytes; the adapter computes md5/size)
  *   -> name       (sanitize/fallback + de-dupe vs a REAL folder listing, F6-FR3)
  *   -> uploading  (apply -> PUT)
@@ -65,6 +65,15 @@ export interface SendRequest {
   source?: { bytes: Uint8Array; contentType: string; title: string };
 }
 
+/** The converted bytes + destination needed to retry a send after reconnect (F9-FR1). */
+export interface RetainedJob {
+  target: Target;
+  directoryId: string;
+  fileName: string;
+  contentType: string;
+  blobHandle: string;
+}
+
 export interface SendDocumentDeps {
   /** Resolve the DeliveryPort for a target (cloud now; private in F8). */
   resolveDelivery: (target: Target) => DeliveryPort;
@@ -82,6 +91,12 @@ export interface SendDocumentDeps {
   account?: string;
   /** Auth-failure recovery deps (F2-FR4), used when a step returns an auth failure. */
   authDeps: AuthFailureDeps;
+  /**
+   * Retain the in-flight (already-converted) job for retry after reconnect
+   * (F9-FR1). Called on an auth failure so the "will retry" prompt is honest;
+   * RetryPending replays it from the blob handle. Absent when retention is off.
+   */
+  retainJob?: (job: RetainedJob) => Promise<void>;
   /** Optional filename-confirm hook (F6-FR4); returns the (possibly edited) name. */
   confirmName?: (suggested: string) => Promise<string>;
   /**
@@ -265,6 +280,20 @@ async function finishDeliveryFailure(
     ...(deps.account !== undefined ? { account: deps.account } : {}),
   });
   if (outcome.kind === 'auth') {
+    // Retain the already-converted job so reconnect can replay it (F9-FR1) — the
+    // auth-failure prompt promises exactly this. A source upload (PDF) has no
+    // blob handle yet, so persist its bytes first.
+    if (deps.retainJob) {
+      const handle =
+        blobHandle ?? (await deps.blobs.put(uploadInput.bytes, uploadInput.contentType));
+      await deps.retainJob({
+        target: req.target,
+        directoryId: uploadInput.directoryId,
+        fileName: uploadInput.fileName,
+        contentType: uploadInput.contentType,
+        blobHandle: handle,
+      });
+    }
     await deps.badge.set('expired');
     return fail('auth', 'Session expired — reconnect to retry', 'failed');
   }
