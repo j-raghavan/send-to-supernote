@@ -80,7 +80,6 @@ describe('F8-AC1 — connect persists JWT-only, identifies the base URL', () => 
     const deps: ConnectPrivateCloudDeps = {
       http,
       sha256hex,
-      random: new FakeRandomSource(),
       store: kv,
     };
 

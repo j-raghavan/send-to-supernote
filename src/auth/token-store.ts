@@ -9,17 +9,20 @@ import type { Token } from '@domain/auth';
 
 export interface StoredAccount {
   token: Token;
-  account: string;
+  /** Account email, when known. Absent for the cookie-capture cloud connect. */
+  account?: string;
   equipment: string;
 }
 
 export class TokenStore {
   constructor(private readonly store: KeyValueStore) {}
 
-  /** Persist the token, account, and equipment after a successful connect. */
+  /** Persist the token, account (when known), and equipment after a connect. */
   async save(stored: StoredAccount): Promise<void> {
     await this.store.set(StorageKeys.token, stored.token);
-    await this.store.set(StorageKeys.account, stored.account);
+    if (stored.account !== undefined) {
+      await this.store.set(StorageKeys.account, stored.account);
+    }
     await this.store.set(StorageKeys.equipment, stored.equipment);
   }
 

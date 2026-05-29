@@ -50,7 +50,7 @@ describe('buildOptionsView (F7-FR1)', () => {
 
 describe('control change validation (F7-FR1)', () => {
   it('accepts valid mode/format/target values', () => {
-    expect(parseModeChange('fullpage')).toBe('fullpage');
+    expect(parseModeChange('reader')).toBe('reader');
     expect(parseFormatChange('epub')).toBe('epub');
     expect(parseTargetChange('privatecloud')).toBe('privatecloud');
   });

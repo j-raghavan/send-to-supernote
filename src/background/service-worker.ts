@@ -17,8 +17,10 @@ import { retryPending } from '@jobs/retry-pending';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { PrivateCloudStore } from '@auth/private-cloud-store';
-import { connectAccount } from '@auth/connect-account';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
+import { formatLoginError } from '@auth/login-routine';
+import { ACCESS_TOKEN_COOKIE, captureCloudToken, CLOUD_WEB_URL } from '@auth/cloud-session';
+import { reflectConnectionState } from '@auth/connection-state';
 import type { Target } from '@domain/settings';
 import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-target';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
@@ -33,10 +35,13 @@ import { IndexedDbBlobTransfer } from './blob-transfer';
 import { OffscreenManager } from './offscreen-manager';
 import { ChromeOffscreenHost } from './offscreen-host';
 import { OffscreenRenderer } from './offscreen-renderer';
+import { OffscreenReaderExtractor } from './offscreen-reader';
 import { ScriptingExtractor } from './scripting-extractor';
 import { ChromeNotifier } from './notifications';
 import { ChromeBadge } from './badge';
 import { ChromeOptionsOpener } from './options-opener';
+import { ChromeCookieReader } from './cookie-reader';
+import { ChromeTabController } from './tab-controller';
 import { SystemClock } from './clock';
 import { registerContextMenus, onContextMenuClicked } from './context-menus';
 
@@ -51,6 +56,8 @@ const privateStore = new PrivateCloudStore(store);
 const settingsStore = new SettingsStore(store);
 const offscreen = new OffscreenManager(new ChromeOffscreenHost());
 const random = new WebCryptoRandomSource();
+const cookies = new ChromeCookieReader();
+const tabs = new ChromeTabController();
 const queue = new JobQueue(store, clock);
 const history = new JobHistory(store, clock);
 
@@ -74,7 +81,9 @@ function buildDeps(ctx: SendContext): SendDocumentDeps {
     });
   return {
     resolveDelivery: resolve,
-    capture: { extractor: new ScriptingExtractor(ctx.tabId) },
+    capture: {
+      extractor: new ScriptingExtractor(ctx.tabId, new OffscreenReaderExtractor(offscreen)),
+    },
     render: { renderer: new OffscreenRenderer(offscreen) },
     blobs,
     notifier,
@@ -107,7 +116,11 @@ async function hasToken(target: Target): Promise<boolean> {
   return token !== undefined && token.length > 0;
 }
 
-async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Promise<void> {
+async function runSend(
+  tabId: number,
+  hostname: string,
+  mode?: CaptureMode,
+): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const cloudToken = (await tokens.getToken()) ?? '';
   const account = await tokens.getAccount();
@@ -128,14 +141,80 @@ async function runSend(tabId: number, hostname: string, mode?: CaptureMode): Pro
     ...(pcFolderId !== undefined ? { privateFolderId: pcFolderId } : {}),
   });
   const folderId = settings.target === 'privatecloud' ? pcFolderId : settings.cloudFolderId;
-  const request = resolveSendRequest(
-    settings,
-    { hostname },
-    {
-      ...(mode !== undefined ? { mode } : {}),
-    },
-  );
-  await recordedSend(history, deps, folderId !== undefined ? { ...request, folderId } : request);
+  try {
+    // If the page is already a document (PDF in the browser viewer), send the
+    // bytes as-is — there is nothing to capture/convert.
+    const pdf = await probePdf(tabId);
+    const request = resolveSendRequest(
+      settings,
+      { hostname },
+      {
+        ...(mode !== undefined ? { mode } : {}),
+        ...(pdf ? { format: 'pdf' as const } : {}),
+      },
+    );
+    const finalRequest = {
+      ...request,
+      ...(folderId !== undefined ? { folderId } : {}),
+      ...(pdf
+        ? { source: { bytes: pdf.bytes, contentType: 'application/pdf', title: pdf.title } }
+        : {}),
+    };
+    const result = await recordedSend(history, deps, finalRequest);
+    if (!result.ok) {
+      console.warn(
+        '[send-to-supernote] send failed:',
+        result.error.kind,
+        '—',
+        result.error.message,
+      );
+      return { ok: false, error: result.error.message };
+    }
+    return { ok: true };
+  } catch (thrown) {
+    // A thrown capture/render (e.g. an internal page like the New Tab that can't
+    // be scripted) would otherwise leave only a red badge with no explanation.
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    console.warn('[send-to-supernote] send threw:', message);
+    await badge.set('error');
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Detect a PDF page (Chrome's built-in viewer reports `document.contentType ===
+ * "application/pdf"`; the URL often has no `.pdf` extension, e.g. arXiv) and
+ * fetch its bytes. The send click grants `activeTab` host access, so the SW may
+ * fetch the active tab's URL. Returns undefined for normal HTML pages.
+ */
+async function probePdf(tabId: number): Promise<{ bytes: Uint8Array; title: string } | undefined> {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => ({ contentType: document.contentType, url: location.href, title: document.title }),
+  });
+  const info = injection?.result as
+    | { contentType?: string; url?: string; title?: string }
+    | undefined;
+  if (info?.contentType !== 'application/pdf' || !info.url) {
+    return undefined;
+  }
+  const downloaded = await http.getBytes(info.url);
+  if (downloaded.bytes === undefined) {
+    throw new Error(`Could not download the PDF (HTTP ${downloaded.status}).`);
+  }
+  const title = info.title && info.title.trim().length > 0 ? info.title : pdfTitleFromUrl(info.url);
+  return { bytes: downloaded.bytes, title };
+}
+
+/** Derive a document title from a PDF URL's last path segment. */
+function pdfTitleFromUrl(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, '');
+    const last = path.slice(path.lastIndexOf('/') + 1);
+    return (last || 'document').replace(/\.pdf$/i, '');
+  } catch {
+    return 'document';
+  }
 }
 
 /** Build the resolveDelivery factory used for retry (no tab/capture needed). */
@@ -194,47 +273,104 @@ function hostnameOf(url: string | undefined): string {
   }
 }
 
-interface ConnectMessage {
-  target: Target;
+interface PrivateConnectMessage {
   account: string;
   password: string;
   baseUrl?: string;
 }
 
 /**
- * Run sign-in IN THE SERVICE WORKER so the DNR Origin-strip rule applies to the
- * fetch (viewer.supernote.com 403s when a browser Origin header is present —
- * F5-FR1 spike). On success, pin the target and retry any retained jobs (F9-FR1).
- * Returns a serializable result for the popup/Options page.
+ * Private Cloud sign-in runs IN THE SERVICE WORKER against the user's server via
+ * the shared login routine. On success, pin the target and retry retained jobs
+ * (F9-FR1). Public Supernote Cloud does NOT use this — its login is CAPTCHA/2FA-
+ * gated, so it goes through the cookie-capture connect flow below.
  */
-async function handleConnect(msg: ConnectMessage): Promise<{ ok: boolean; error?: string }> {
-  const loginDeps = { http, sha256hex: webCryptoSha256Hex, random };
-  if (msg.target === 'privatecloud') {
-    if (!msg.baseUrl) {
-      return { ok: false, error: 'Missing Private Cloud server URL.' };
-    }
+async function handlePrivateConnect(
+  msg: PrivateConnectMessage,
+): Promise<{ ok: boolean; error?: string; detail?: string }> {
+  if (!msg.baseUrl) {
+    return { ok: false, error: 'Missing Private Cloud server URL.' };
+  }
+  try {
     const result = await connectPrivateCloud(
-      { ...loginDeps, store },
+      { http, sha256hex: webCryptoSha256Hex, store },
       { baseUrl: msg.baseUrl, account: msg.account, password: msg.password },
     );
     if (!result.ok) {
-      return { ok: false, error: result.error.message };
+      return { ok: false, error: result.error.message, detail: formatLoginError(result.error) };
     }
     await settingsStore.setTarget('privatecloud');
     await retryAfterReconnect('privatecloud');
     return { ok: true };
+  } catch (thrown) {
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    return { ok: false, error: message, detail: `network · ${message}` };
   }
-  const result = await connectAccount(
-    { ...loginDeps, tokens },
-    { account: msg.account, password: msg.password },
-  );
+}
+
+/**
+ * Read the official-login session cookie and, when present, persist it as the
+ * public-Cloud token, pin the target, and retry retained jobs. Shared by the
+ * immediate path (already signed in) and the deferred path (cookie observed
+ * after the user signs in on the opened tab).
+ */
+async function finalizeCloudCapture(): Promise<boolean> {
+  const result = await captureCloudToken({ cookies, tokens });
   if (!result.ok) {
-    return { ok: false, error: result.error.message };
+    return false;
   }
   await settingsStore.setTarget('cloud');
   await retryAfterReconnect('cloud');
-  return { ok: true };
+  await reflectConnectionState({ tokens, badge });
+  return true;
 }
+
+/**
+ * Begin the Supernote-Cloud connect: capture the session immediately if the
+ * user is already signed in on cloud.supernote.com; otherwise open the official
+ * login page and arm the cookie watcher to finish the connect once they sign in.
+ */
+async function beginCloudConnect(): Promise<{ ok: boolean; pending?: boolean }> {
+  if (await finalizeCloudCapture()) {
+    return { ok: true };
+  }
+  const tabId = await tabs.open(`${CLOUD_WEB_URL}/#/login`);
+  if (tabId !== undefined) {
+    await store.set(StorageKeys.cloudConnectTabId, tabId);
+  }
+  return { ok: false, pending: true };
+}
+
+/** Finish a pending cloud connect once the session cookie appears. */
+async function onCloudCookieSet(): Promise<void> {
+  const pendingTabId = await store.get<number>(StorageKeys.cloudConnectTabId);
+  if (pendingTabId === undefined) {
+    return; // No connect in progress — ignore unrelated cookie changes.
+  }
+  if (!(await finalizeCloudCapture())) {
+    return; // Cookie not usable yet (e.g. mid-login) — wait for the next change.
+  }
+  await store.remove(StorageKeys.cloudConnectTabId);
+  await tabs.close(pendingTabId);
+  await notifier.notify({
+    level: 'success',
+    title: 'Connected to Supernote Cloud',
+    message: 'You can now send pages to your Supernote.',
+  });
+}
+
+// Capture the session as soon as cloud.supernote.com sets `x-access-token`
+// (registered at top level so it survives SW eviction during a slow sign-in).
+chrome.cookies.onChanged.addListener((change) => {
+  if (
+    change.removed ||
+    change.cookie.name !== ACCESS_TOKEN_COOKIE ||
+    !change.cookie.domain.includes('supernote.com')
+  ) {
+    return;
+  }
+  void onCloudCookieSet();
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   registerContextMenus();
@@ -256,21 +392,41 @@ onContextMenuClicked((mode) => {
   void sendActiveTab(mode);
 });
 
-async function sendActiveTab(mode?: CaptureMode): Promise<void> {
+async function sendActiveTab(mode?: CaptureMode): Promise<{ ok: boolean; error?: string }> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id !== undefined) {
-    await runSend(tab.id, hostnameOf(tab.url), mode);
+  if (tab?.id === undefined) {
+    return { ok: false, error: 'No active tab to send.' };
   }
+  if (tab.url !== undefined && !/^https?:\/\//i.test(tab.url)) {
+    // Internal pages (chrome://, the New Tab page, the Web Store) can't be
+    // scripted, so capture would fail — say so instead of a silent red badge.
+    return {
+      ok: false,
+      error: 'This page can’t be captured. Open a normal web page and try again.',
+    };
+  }
+  return runSend(tab.id, hostnameOf(tab.url), mode);
 }
 
-// Popup/Options forward here. Network runs in the SW so the DNR Origin-strip
-// applies: `connect` performs sign-in (F2/F8); `send` runs the saga (F6);
-// `reconnected` retries retained jobs (F9-FR1).
+// Startup marker — confirms in the SW console which build is live. Reopening the
+// popup re-reads from disk, but the SW only re-registers on an extension reload;
+// if this line is absent after reloading, the SW is stale (remove + re-add).
+console.warn('[send-to-supernote] SW build: one-button + EPUB + reader-fallback');
+
+// Popup/Options forward here. `connect-cloud` runs the cookie-capture flow for
+// public Supernote Cloud (CAPTCHA/2FA-gated, so the user signs in on Supernote's
+// own page); `connect` performs Private Cloud sign-in (F8); `send` runs the saga
+// (F6); `reconnected` retries retained jobs (F9-FR1).
 chrome.runtime.onMessage.addListener(
   (
     message: unknown,
     _sender,
-    sendResponse: (response: { ok: boolean; error?: string }) => void,
+    sendResponse: (response: {
+      ok: boolean;
+      error?: string;
+      detail?: string;
+      pending?: boolean;
+    }) => void,
   ): boolean | undefined => {
     if (typeof message !== 'object' || message === null) {
       return undefined;
@@ -283,21 +439,19 @@ chrome.runtime.onMessage.addListener(
       baseUrl?: string;
     };
     if (msg.type === 'send') {
-      void sendActiveTab();
-      return undefined;
+      void sendActiveTab().then(sendResponse);
+      return true; // keep the channel open so the popup can show the outcome
     }
     if (msg.type === 'reconnected' && msg.target !== undefined) {
       void retryAfterReconnect(msg.target);
       return undefined;
     }
-    if (
-      msg.type === 'connect' &&
-      msg.target !== undefined &&
-      msg.account !== undefined &&
-      msg.password !== undefined
-    ) {
-      void handleConnect({
-        target: msg.target,
+    if (msg.type === 'connect-cloud') {
+      void beginCloudConnect().then(sendResponse);
+      return true; // keep the message channel open for the async response
+    }
+    if (msg.type === 'connect' && msg.account !== undefined && msg.password !== undefined) {
+      void handlePrivateConnect({
         account: msg.account,
         password: msg.password,
         ...(msg.baseUrl !== undefined ? { baseUrl: msg.baseUrl } : {}),

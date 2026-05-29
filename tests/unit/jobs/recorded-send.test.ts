@@ -39,10 +39,11 @@ describe('recordedSend (F6-FR6 / F9 history)', () => {
     deps = {
       resolveDelivery: () => port,
       capture: {
-        extractor: new FakeExtractor(
-          { title: 'My Article', content: '<p>'.padEnd(80, 'x') + '</p>', length: 600 },
-          { title: 'My Article', html: '<html>x</html>' },
-        ),
+        extractor: new FakeExtractor({
+          title: 'My Article',
+          content: '<p>'.padEnd(80, 'x') + '</p>',
+          length: 600,
+        }),
       },
       render: { renderer: new FakeRenderer(1024, blobs) },
       blobs,

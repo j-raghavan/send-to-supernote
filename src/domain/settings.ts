@@ -24,15 +24,20 @@ export interface Settings {
   confirmFilename: boolean;
 }
 
-/** Defaults applied when nothing is stored yet (PDF + Reader + public Cloud). */
+/**
+ * Defaults applied when nothing is stored yet: Reader + EPUB + public Cloud.
+ * EPUB is reflowable (ideal for e-ink) and renders by zipping the article HTML —
+ * it skips html2canvas rasterization, which is unreliable in a non-visible
+ * offscreen document and chokes on cross-origin images.
+ */
 export const DEFAULT_SETTINGS: Settings = {
   defaultMode: 'reader',
-  defaultFormat: 'pdf',
+  defaultFormat: 'epub',
   target: 'cloud',
   confirmFilename: false,
 };
 
-const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>(['reader', 'fullpage']);
+const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>(['reader']);
 const OUTPUT_FORMATS: ReadonlySet<string> = new Set<OutputFormat>(['pdf', 'epub']);
 const TARGETS: ReadonlySet<string> = new Set<Target>(['cloud', 'privatecloud']);
 

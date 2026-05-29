@@ -3,78 +3,128 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Send to Supernote — Options</title>
+    <title>Send to Supernote — Settings</title>
   </head>
   <body>
-    <main id="app">
-      <h1>Send to Supernote — Options</h1>
+    <main class="page">
+      <header class="hero">
+        <img id="logo" class="hero__logo" alt="Send to Supernote" />
+        <div>
+          <h1 class="hero__title">Send to Supernote</h1>
+          <p class="hero__tagline">
+            Capture any page — or pass a PDF straight through — to your Supernote.
+          </p>
+        </div>
+      </header>
 
-      <section id="connection">
-        <h2>Account</h2>
-        <p id="connection-status">Loading…</p>
-        <form id="connect-form">
-          <input id="email" type="email" placeholder="Supernote email" autocomplete="username" />
+      <!-- Supernote Cloud -->
+      <section id="connection" class="card">
+        <div class="card__head">
+          <h2>Supernote Cloud</h2>
+          <span id="connection-status" class="card__hint">Loading…</span>
+        </div>
+
+        <div id="cloud-connected" class="account" hidden>
+          <span class="account__chip"
+            ><span class="dot"></span><span id="account-chip">Connected</span></span
+          >
+          <button id="disconnect" class="link link--muted" type="button">Sign out</button>
+        </div>
+
+        <div id="cloud-disconnected" class="stack" hidden>
+          <p class="muted">
+            Sign in on Supernote's own page (it handles the captcha and any verification code). The
+            extension connects automatically and never sees your password.
+          </p>
+          <div>
+            <button id="connect-cloud" class="btn btn--primary" type="button">
+              Connect Supernote Cloud
+            </button>
+          </div>
+          <p id="connect-cloud-hint" class="muted" hidden></p>
+        </div>
+      </section>
+
+      <!-- Capture defaults -->
+      <section id="defaults" class="card">
+        <div class="card__head"><h2>Defaults</h2></div>
+        <div class="stack">
+          <div class="field">
+            <span class="field__label">Format</span>
+            <select id="default-format" class="select">
+              <option value="epub">EPUB — reflowable, best for reading</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field__label">Send to</span>
+            <select id="target" class="select">
+              <option value="cloud">Supernote Cloud</option>
+              <option value="privatecloud">Private Cloud (self-hosted)</option>
+            </select>
+          </div>
+          <label class="check">
+            <input id="confirm-filename" type="checkbox" />
+            Confirm the filename before each send
+          </label>
+        </div>
+      </section>
+
+      <!-- Destination folder -->
+      <section id="folder" class="card">
+        <div class="card__head">
+          <h2>Destination folder</h2>
+          <span class="card__hint">Defaults to <strong>Document/</strong></span>
+        </div>
+        <ul id="folder-list" class="folders"></ul>
+      </section>
+
+      <!-- Private Cloud -->
+      <section id="privatecloud-section" class="card">
+        <div class="card__head"><h2>Private Cloud</h2></div>
+        <div class="stack">
           <input
-            id="password"
-            type="password"
-            placeholder="Password"
-            autocomplete="current-password"
+            id="pc-base-url"
+            class="input"
+            type="url"
+            placeholder="https://supernote.home.lan"
           />
-          <button id="connect" type="submit">Connect</button>
-          <button id="disconnect" type="button">Disconnect</button>
-        </form>
-        <p class="note">Your password is never stored — only a session token is saved locally.</p>
+          <div class="row">
+            <input
+              id="pc-email"
+              class="input"
+              type="email"
+              placeholder="Account email"
+              autocomplete="username"
+            />
+            <input
+              id="pc-password"
+              class="input"
+              type="password"
+              placeholder="Password"
+              autocomplete="current-password"
+            />
+          </div>
+          <p id="password-note" class="muted"></p>
+          <p id="pc-http-warning" class="warning" hidden></p>
+          <div class="row">
+            <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
+            <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
+          </div>
+        </div>
       </section>
 
-      <section id="defaults">
-        <h2>Capture defaults</h2>
-        <label
-          >Mode
-          <select id="default-mode">
-            <option value="reader">Reader View</option>
-            <option value="fullpage">Full Page</option>
-          </select>
-        </label>
-        <label
-          >Format
-          <select id="default-format">
-            <option value="pdf">PDF</option>
-            <option value="epub">EPUB</option>
-          </select>
-        </label>
-        <label
-          >Target
-          <select id="target">
-            <option value="cloud">Supernote Cloud</option>
-            <option value="privatecloud">Private Cloud (self-hosted)</option>
-          </select>
-        </label>
-        <label
-          ><input id="confirm-filename" type="checkbox" /> Confirm filename before each send</label
+      <!-- Before you start -->
+      <section id="onboarding" class="card">
+        <div class="card__head"><h2>Before you start</h2></div>
+        <p id="onboarding-copy" class="muted"></p>
+      </section>
+
+      <footer class="ftr">
+        <p id="no-sharing" class="muted"></p>
+        <a id="privacy-link" class="link link--muted" href="#" target="_blank" rel="noopener"
+          >Privacy Policy</a
         >
-      </section>
-
-      <section id="folder">
-        <h2>Destination folder</h2>
-        <ul id="folder-list"></ul>
-      </section>
-
-      <section id="privatecloud-section">
-        <h2>Private Cloud</h2>
-        <input id="pc-base-url" type="url" placeholder="https://supernote.home.lan" />
-        <button id="pc-save" type="button">Save server URL</button>
-        <button id="pc-disconnect" type="button">Disconnect</button>
-        <p id="pc-http-warning" class="warning" hidden></p>
-      </section>
-
-      <section id="onboarding">
-        <h2>Before you start</h2>
-        <p id="onboarding-copy"></p>
-      </section>
-
-      <footer>
-        <p id="no-sharing"></p>
-        <a id="privacy-link" href="#" target="_blank" rel="noopener">Privacy Policy</a>
       </footer>
     </main>
     <script type="module" src="./options.ts"></script>

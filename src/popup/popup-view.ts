@@ -32,8 +32,10 @@ export function buildPopupView(
   settings: Settings,
 ): PopupView {
   const status =
-    session === 'connected' && account !== undefined
-      ? `Connected as ${account}`
+    session === 'connected'
+      ? account !== undefined
+        ? `Connected as ${account}`
+        : 'Connected to Supernote Cloud'
       : session === 'expired'
         ? 'Session expired — reconnect in Options'
         : 'Not connected — connect in Options';

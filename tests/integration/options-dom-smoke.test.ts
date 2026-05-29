@@ -3,15 +3,15 @@
  * DOM-smoke for the wired (c8-ignored) Options shell (src/options/options.ts).
  *
  * options.ts is a thin DOM bootstrap excluded from coverage; its decision logic
- * (connectAccount, disconnectPublicCloud, the `reconnected` message) is unit-
- * tested elsewhere. This smoke test runs the REAL shell against happy-dom with a
- * faked `chrome` and a faked global `fetch`, then drives the wired controls to
- * confirm the wiring contract holds end-to-end:
+ * (the cookie-capture connect, disconnectPublicCloud) is unit-tested elsewhere.
+ * This smoke test runs the REAL shell against happy-dom with a faked `chrome`
+ * and a faked global `fetch`, then drives the wired controls to confirm the
+ * wiring contract holds end-to-end:
  *
- *  (3a) submitting the Connect form runs the login flow over the (faked) sole
- *       fetch AND posts the {type:'reconnected', target:'cloud'} message that
- *       fires the F9 auto-retry; the password field is cleared; the token is
- *       persisted to the faked chrome.storage.local.
+ *  (3a) submitting the Connect form asks the service worker to run the official-
+ *       login cookie-capture flow ({type:'connect-cloud'}) — Supernote Cloud is
+ *       CAPTCHA/2FA-gated, so the page never logs in itself — and shows guidance
+ *       to finish on the opened tab.
  *       Clicking Disconnect removes the stored token.
  *
  * Never touches a real Supernote server — fetch and chrome are both faked.
@@ -20,20 +20,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const OPTIONS_HTML = `
   <main>
-    <p id="connection-status">Loading…</p>
-    <form id="connect-form">
-      <input id="email" type="email" />
-      <input id="password" type="password" />
-      <button id="connect" type="submit">Connect</button>
-      <button id="disconnect" type="button">Disconnect</button>
-    </form>
-    <p class="note" id="note"></p>
-    <select id="default-mode"><option value="reader">r</option><option value="fullpage">f</option></select>
-    <select id="default-format"><option value="pdf">p</option><option value="epub">e</option></select>
+    <img id="logo" />
+    <span id="connection-status">Loading…</span>
+    <div id="cloud-connected" hidden><span id="account-chip"></span>
+      <button id="disconnect" type="button">Sign out</button>
+    </div>
+    <div id="cloud-disconnected" hidden>
+      <button id="connect-cloud" type="button">Connect Supernote Cloud</button>
+      <p id="connect-cloud-hint" hidden></p>
+    </div>
+    <select id="default-format"><option value="epub">e</option><option value="pdf">p</option></select>
     <select id="target"><option value="cloud">c</option><option value="privatecloud">pc</option></select>
     <input id="confirm-filename" type="checkbox" />
     <ul id="folder-list"></ul>
     <input id="pc-base-url" type="url" />
+    <input id="pc-email" type="email" />
+    <input id="pc-password" type="password" />
+    <p id="password-note"></p>
     <button id="pc-save" type="button"></button>
     <button id="pc-disconnect" type="button"></button>
     <p id="pc-http-warning" hidden></p>
@@ -78,6 +81,7 @@ function installChrome(): ChromeFake {
         return Promise.resolve(undefined);
       },
       onMessage: { addListener: () => undefined },
+      getURL: (path: string) => path,
       lastError: undefined,
     },
   };
@@ -128,27 +132,20 @@ describe('Options shell DOM-smoke (wired Connect/Disconnect, F10 wiring)', () =>
     delete (globalThis as unknown as { fetch?: unknown }).fetch;
   });
 
-  it('Connect runs the login flow, persists the token, posts `reconnected`, clears the password', async () => {
+  it('Connect asks the service worker to run the official-login capture flow', async () => {
     await import('../../src/options/options');
     await flush(); // initial render()
 
-    (document.getElementById('email') as HTMLInputElement).value = 'me@x.com';
-    (document.getElementById('password') as HTMLInputElement).value = 'pw-secret';
-
-    document
-      .getElementById('connect-form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    document.getElementById('connect-cloud')!.dispatchEvent(new Event('click', { bubbles: true }));
     await flush();
-    await flush(); // login + persist + notify + re-render
+    await flush(); // sendMessage + hint update
 
-    // The token was persisted to the faked chrome.storage.local.
-    expect(chromeFake.storage.local.get('supernote.token')).toBe('tok-smoke');
-    // The F9 auto-retry trigger fired.
-    expect(chromeFake.runtime.messages).toContainEqual({ type: 'reconnected', target: 'cloud' });
-    // The password is not kept in the DOM after connect.
-    expect((document.getElementById('password') as HTMLInputElement).value).toBe('');
-    // And it was never written to storage (D-2).
-    expect([...chromeFake.storage.local.values()].join(',')).not.toContain('pw-secret');
+    // It delegated to the SW cookie-capture flow rather than logging in here.
+    expect(chromeFake.runtime.messages).toContainEqual({ type: 'connect-cloud' });
+    // With no immediate session, it guides the user to finish on the opened tab.
+    expect(document.getElementById('connect-cloud-hint')!.textContent).toContain(
+      'Finish signing in',
+    );
   });
 
   it('Disconnect removes the stored token', async () => {

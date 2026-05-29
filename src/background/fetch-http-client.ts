@@ -24,6 +24,14 @@ export class FetchHttpClient implements HttpClient {
     const json = await parseJsonSafely(response);
     return json !== undefined ? { status: response.status, json } : { status: response.status };
   }
+
+  async getBytes(url: string): Promise<{ status: number; bytes?: Uint8Array }> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return { status: response.status };
+    }
+    return { status: response.status, bytes: new Uint8Array(await response.arrayBuffer()) };
+  }
 }
 
 /** Parse a JSON body when present; tolerate empty/non-JSON (e.g. the S3 PUT 200). */

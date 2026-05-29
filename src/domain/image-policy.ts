@@ -1,11 +1,10 @@
 /**
- * Image taint policy (F4-FR4 / F4-AC2) — pure classification, no DOM/network.
+ * Image taint policy (F3-FR4) — pure classification, no DOM/network.
  *
- * For Full Page rasterization, a cross-origin image that is drawn directly
- * taints the canvas (html2canvas then cannot export it). The strategy: classify
- * each image src so the pipeline can (a) keep same-origin/data images as-is, (b)
- * inline a cross-origin image via host-permitted fetch (turning it same-origin
- * to the canvas), or (c) OMIT it — never aborting the capture.
+ * When rendering, a cross-origin image can taint a canvas / fail to load. The
+ * strategy: classify each image src so the pipeline can (a) keep
+ * same-origin/data images as-is, (b) inline a cross-origin image via
+ * host-permitted fetch, or (c) OMIT it — never aborting the capture.
  */
 
 export type ImageDisposition =

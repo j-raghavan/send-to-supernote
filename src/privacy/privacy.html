@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Send to Supernote — Privacy</title>
+    <style>
+      :root {
+        --ink: #1f2328;
+        --muted: #6b7280;
+        --line: #e6e8eb;
+        --soft: #f3f4f6;
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --accent: #111827;
+        --radius: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        font:
+          14px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+      .page {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 40px 20px 64px;
+      }
+      .hero {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .hero__logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        box-shadow: 0 4px 16px rgba(17, 24, 39, 0.12);
+        flex: none;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.02em;
+      }
+      .updated {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px 22px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      .lead {
+        font-size: 15px;
+        color: var(--ink);
+      }
+      code {
+        background: var(--soft);
+        border-radius: 5px;
+        padding: 1px 5px;
+        font-size: 12.5px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .ftr {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <img class="hero__logo" src="/icons/icon512.png" alt="Send to Supernote" />
+        <div>
+          <h1>Privacy Policy</h1>
+          <p class="updated">Send to Supernote · Last updated 2026-05-28</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <p class="lead">
+          Send to Supernote captures the current web page, converts it to a PDF or EPUB
+          <strong>entirely on your device</strong>, and uploads it to <strong>your</strong>
+          Supernote destination — the public Supernote Cloud or your own self-hosted Private Cloud.
+          A PDF you are already viewing is sent as-is. Nothing passes through any server we run.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>What we store, and where</h2>
+        <ul>
+          <li>
+            <strong>A session token only.</strong> When you connect, the access token is stored in
+            <code>chrome.storage.local</code> <strong>on this device only</strong>. Your password is
+            never stored — for Private Cloud it is used in memory only to compute the login hash and
+            then discarded; for Supernote Cloud you sign in on Supernote's own page and the
+            extension only reads the resulting session cookie.
+          </li>
+          <li>
+            <strong>No <code>chrome.storage.sync</code></strong> — nothing sensitive is synced
+            across machines.
+          </li>
+          <li>
+            <strong>Local settings</strong> (format, target, destination folder, filename-confirm)
+            and a short local send history, stored locally for your convenience. None of it leaves
+            your device except as part of a send you initiate.
+          </li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Where your data goes</h2>
+        <ul>
+          <li>
+            Page content is converted <strong>locally</strong> and uploaded <strong>only</strong> to
+            the destination you choose:
+          </li>
+          <li>
+            <strong>Supernote Cloud</strong> — <code>viewer.supernote.com</code> /
+            <code>cloud.supernote.com</code> and Ratta's own storage (Amazon S3) via a pre-signed
+            URL Supernote's API issues; or
+          </li>
+          <li>
+            <strong>Your Private Cloud server</strong> — the exact base URL you configured; nothing
+            leaves your network beyond your own server.
+          </li>
+          <li>
+            <strong>No third-party providers</strong> (no Dropbox/Drive/OneDrive),
+            <strong>no third-party sign-in</strong> (no OAuth), and
+            <strong>no server operated by this project</strong>.
+          </li>
+          <li><strong>No telemetry, no analytics, no remote logging.</strong></li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Your control</h2>
+        <ul>
+          <li>
+            <strong>Disconnect</strong> at any time to remove the stored token from this device.
+          </li>
+          <li>Uninstalling the extension removes all locally stored data.</li>
+        </ul>
+      </section>
+
+      <p class="ftr">
+        Canonical hosted copy:
+        <a
+          href="https://j-raghavan.github.io/send-to-supernote/privacy"
+          target="_blank"
+          rel="noopener"
+          >j-raghavan.github.io/send-to-supernote/privacy</a
+        >. Please file issues at the project repository.
+      </p>
+    </main>
+  </body>
+</html>

@@ -1,42 +1,46 @@
 /**
- * F2 auth-flow integration tests (mocked HttpClient + KeyValueStore fakes).
+ * F2 auth-flow integration tests (KeyValueStore + cookie/notifier fakes).
  *
- * These wire the real use cases together (connect -> authenticated call ->
- * auth failure -> recovery -> reconnect -> retry) through the same fakes the
- * unit tests use. They cover the spec's "Required Tests > Integration (mocked
- * network)" rows for F2 and the F2 Acceptance Criteria end-to-end:
+ * Public Supernote Cloud sign-in is CAPTCHA/2FA-gated, so the extension does NOT
+ * log in: the user signs in on Supernote's own page and the extension captures
+ * the `x-access-token` session cookie (captureCloudToken). These wire the real
+ * use cases together (connect -> auth failure -> recovery -> reconnect -> retry)
+ * through the same fakes the unit tests use:
  *
- *  - F2-AC1: connect stores a token and shows the connected account.
- *  - F2-AC2: connect persists token-only and NEVER the password (raw snapshot).
+ *  - F2-AC1: connect captures the session token and reflects connected.
+ *  - F2-AC2 / D-2 / I-1: only the token (+equipment) is persisted — no password
+ *            (there is none) and no email; the raw snapshot holds no secret.
  *  - F2-AC4: an auth failure via BOTH a transport 401 AND a success:false /
  *            errorCode:"E0401" envelope (HTTP 200) clears the token, prompts
- *            reconnect, retains the in-flight job, and never auto-resubmits a
- *            password. After reconnect the retained job retries and completes
- *            (ties to F9-FR1).
+ *            reconnect, retains the in-flight job, and never auto-resubmits.
+ *            After reconnect the retained job retries and completes (F9-FR1).
  *  - F2-AC5: disconnect clears the credential keys and pending jobs.
- *  - D-3 / I-2 (login leg): the only network destination is viewer.supernote.com.
  *
  * All chrome.* / network are faked; no real Supernote/S3 is contacted.
  */
-import { webcrypto } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ConnectDeps, connectAccount } from '../../src/auth/connect-account';
-import { LOGIN_PATH, NONCE_PATH } from '../../src/auth/login-routine';
+import {
+  ACCESS_TOKEN_COOKIE,
+  CLOUD_WEB_URL,
+  captureCloudToken,
+} from '../../src/auth/cloud-session';
 import { handleAuthFailure } from '../../src/auth/handle-auth-failure';
 import { disconnectPublicCloud } from '../../src/auth/disconnect';
 import { TokenStore } from '../../src/auth/token-store';
 import { StorageKeys } from '@shared/storage-keys';
 import { isAuthFailure, normalizeEnvelope } from '@domain/delivery';
 import type { HttpResponse } from '@shared/ports';
-import { FakeHttpClient } from '../fakes/fake-http-client';
 import { FakeKeyValueStore } from '../fakes/fake-key-value-store';
-import { FakeRandomSource } from '../fakes/fake-random-source';
+import { FakeCookieReader } from '../fakes/fake-cookie-reader';
 import { FakeNotifier, FakeOptionsOpener } from '../fakes/fake-notifier';
 
-async function sha256hex(input: string): Promise<string> {
-  const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+/** Build a (signature-less) JWT whose payload encodes the given claims. */
+function jwt(claims: Record<string, unknown>): string {
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  return `h.${payload}.s`;
 }
+
+const TOKEN = jwt({ exp: 9_999_999_999, userId: '42', equipmentNo: 'WEB' });
 
 /** A minimal "pending jobs" store backed by the same KeyValueStore (F9 seam). */
 class PendingJobsFake {
@@ -53,56 +57,36 @@ class PendingJobsFake {
   }
 }
 
-function connectStubs(http: FakeHttpClient): void {
-  http
-    .on(NONCE_PATH, { status: 200, json: { success: true, randomCode: 'CODE', timestamp: 99 } })
-    .on(LOGIN_PATH, { status: 200, json: { success: true, token: 'tok-OK' } });
-}
-
-describe('F2 auth flow (integration, mocked network)', () => {
-  let http: FakeHttpClient;
+describe('F2 auth flow (integration, cookie-capture connect)', () => {
   let kv: FakeKeyValueStore;
+  let cookies: FakeCookieReader;
   let tokens: TokenStore;
-  let deps: ConnectDeps;
 
   beforeEach(() => {
-    http = new FakeHttpClient();
     kv = new FakeKeyValueStore();
+    cookies = new FakeCookieReader();
     tokens = new TokenStore(kv);
-    deps = { http, sha256hex, random: new FakeRandomSource(), tokens };
   });
 
-  describe('connect persists token-only (F2-AC1 / F2-AC2)', () => {
-    it('stores the token + account and shows the connected account (F2-AC1)', async () => {
-      connectStubs(http);
+  describe('connect captures the official-login session (F2-AC1 / F2-AC2)', () => {
+    it('persists the captured token and reflects connected (F2-AC1)', async () => {
+      cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, TOKEN);
 
-      const result = await connectAccount(deps, { account: 'reader@x.com', password: 'pw' });
+      const result = await captureCloudToken({ cookies, tokens });
 
       expect(result.ok).toBe(true);
-      expect(await tokens.getToken()).toBe('tok-OK');
-      expect(await tokens.getAccount()).toBe('reader@x.com');
+      expect(await tokens.getToken()).toBe(TOKEN);
+      expect(await tokens.getEquipment()).toBe('WEB');
     });
 
-    it('NEVER persists the password — neither as a key nor anywhere in storage (F2-AC2 / I-1)', async () => {
-      connectStubs(http);
+    it('persists ONLY the token/equipment — no password, no email (F2-AC2 / D-2 / I-1)', async () => {
+      cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, TOKEN);
 
-      await connectAccount(deps, { account: 'reader@x.com', password: 'PLAIN-TEXT-SECRET' });
+      await captureCloudToken({ cookies, tokens });
 
-      // No password key, and the raw serialized store contains no secret substring.
       expect(await kv.keys()).not.toContain('supernote.password');
-      expect(kv.snapshot()).not.toContain('PLAIN-TEXT-SECRET');
-      // The hashed login field also never includes the raw password on the wire.
-      expect(JSON.stringify(http.requests)).not.toContain('PLAIN-TEXT-SECRET');
-    });
-
-    it('contacts ONLY viewer.supernote.com during login (D-3 / I-2 login leg)', async () => {
-      connectStubs(http);
-
-      await connectAccount(deps, { account: 'reader@x.com', password: 'pw' });
-
-      for (const url of http.urls) {
-        expect(new URL(url).host).toBe('viewer.supernote.com');
-      }
+      expect(await kv.keys()).not.toContain(StorageKeys.account);
+      expect(kv.snapshot()).not.toContain('password');
     });
   });
 
@@ -120,18 +104,15 @@ describe('F2 auth flow (integration, mocked network)', () => {
       expect(isAuthFailure(response.status, normalizeEnvelope(response.json))).toBe(true);
     });
 
-    it('clears token, prompts reconnect, retains the job, and never auto-resubmits a password', async () => {
-      // Arrange: a connected account with a pending authenticated call about to fail.
-      await tokens.save({ token: 'stale', account: 'reader@x.com', equipment: 'eq-1' });
+    it('clears token, prompts reconnect, retains the job, and never auto-resubmits', async () => {
+      await tokens.save({ token: 'stale', equipment: 'WEB' });
       const jobs = new PendingJobsFake(kv);
       const notifier = new FakeNotifier();
       const options = new FakeOptionsOpener();
 
-      // Simulate the authenticated call returning the auth failure.
       const failing: HttpResponse = json === undefined ? { status } : { status, json };
       expect(isAuthFailure(failing.status, normalizeEnvelope(failing.json))).toBe(true);
 
-      // Act: run the recovery flow (F2-FR4), retaining the in-flight job (F9-FR1).
       const state = await handleAuthFailure(
         {
           clearToken: () => tokens.clearToken(),
@@ -139,49 +120,40 @@ describe('F2 auth flow (integration, mocked network)', () => {
           options,
           retainJob: () => jobs.retain({ url: 'apply' }),
         },
-        { account: 'reader@x.com' },
+        {},
       );
 
-      // Assert: token cleared, expired state, reconnect prompt with prefill, job kept.
       expect(state).toBe('expired');
       expect(await tokens.getToken()).toBeUndefined();
       expect(notifier.notifications[0]?.level).toBe('error');
       expect(notifier.notifications[0]?.title).toContain('session expired');
-      expect(options.opens).toEqual(['reader@x.com']);
+      expect(options.opens).toHaveLength(1);
       expect(await jobs.list()).toHaveLength(1);
-      // Account/equipment retained for prefill; password never stored anywhere.
-      expect(await tokens.getAccount()).toBe('reader@x.com');
       expect(kv.snapshot()).not.toContain('password');
     });
 
     it('reconnect after the failure retries the retained job and completes (F2-AC4 -> F9-AC1)', async () => {
-      // Arrange: failure already happened — token cleared, one job retained.
       await tokens.clearToken();
       const jobs = new PendingJobsFake(kv);
       await jobs.retain({ url: 'apply' });
 
-      // Act: user reconnects (no stored password is reused — fresh credentials).
-      connectStubs(http);
-      const reconnect = await connectAccount(deps, {
-        account: 'reader@x.com',
-        password: 'fresh-pw',
-      });
+      // User reconnects by signing in again — the new session cookie is captured.
+      cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, TOKEN);
+      const reconnect = await captureCloudToken({ cookies, tokens });
 
-      // The retry then "runs" the retained job and clears the queue on success.
       expect(reconnect.ok).toBe(true);
-      expect(await tokens.getToken()).toBe('tok-OK');
+      expect(await tokens.getToken()).toBe(TOKEN);
       const retained = await jobs.list();
       expect(retained).toHaveLength(1);
       await jobs.clear(); // job completed after reconnect
       expect(await jobs.list()).toHaveLength(0);
-      // The failure-shape value is exercised in this scenario's setup as well.
       expect(status).toBeGreaterThan(0);
     });
   });
 
   describe('disconnect clears credentials + pending jobs (F2-AC5)', () => {
     it('removes token/account/equipment and clears pending jobs', async () => {
-      await tokens.save({ token: 'tok', account: 'reader@x.com', equipment: 'eq-1' });
+      await tokens.save({ token: 'tok', account: 'reader@x.com', equipment: 'WEB' });
       const jobs = new PendingJobsFake(kv);
       await jobs.retain({ url: 'apply' });
       const clearPendingJobs = vi.fn(() => jobs.clear());

@@ -3,9 +3,10 @@
  *
  * Runs the Extractor's Readability pass (which the adapter performs on a DOM
  * CLONE so the live page is never mutated — I-4) and normalizes the result into
- * a CapturedDocument. If extraction yields no usable article it returns an
- * actionable "try Full Page" error rather than an empty document (F3-FR5 / no
- * empty upload).
+ * a CapturedDocument. If extraction yields no usable content it returns an
+ * actionable error rather than an empty document (F3-FR5 / no empty upload).
+ * (The offscreen adapter already falls back to the page body when Readability
+ * finds no article, so this fires only for genuinely empty pages.)
  */
 import { err, ok, type Result } from '@shared/result';
 import type { Extractor } from '@shared/ports';
@@ -32,14 +33,14 @@ export async function captureReader(
   } catch {
     return err({
       kind: 'extraction-failed',
-      message: "Couldn't read this page. Try Full Page instead.",
+      message: "Couldn't read this page.",
     });
   }
 
   if (isEmptyReaderExtract(extract)) {
     return err({
       kind: 'empty-article',
-      message: "Couldn't extract a readable article — try Full Page.",
+      message: "This page doesn't have readable content to send.",
     });
   }
 

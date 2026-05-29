@@ -54,13 +54,11 @@ describe('F10-FR4: no runtime remote code (all libs bundled)', () => {
     const adapters = [
       'content/reader.ts',
       'offscreen/pdf-renderer.ts',
-      'offscreen/canvas-raster.ts',
       'offscreen/epub-renderer.ts',
     ].map((p) => readFileSync(join(SRC, p), 'utf8'));
     const all = adapters.join('\n');
     expect(all).toContain("from '@mozilla/readability'");
     expect(all).toContain("from 'jspdf'");
-    expect(all).toContain("from 'html2canvas'");
     expect(all).toContain("from 'jszip'");
   });
 });

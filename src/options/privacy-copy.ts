@@ -13,6 +13,13 @@
  */
 export const PRIVACY_POLICY_URL = 'https://j-raghavan.github.io/send-to-supernote/privacy';
 
+/**
+ * Path to the privacy page bundled INSIDE the extension. The popup/Options
+ * "Privacy" links open this via `chrome.runtime.getURL` so it always works
+ * offline (the hosted URL above is a deferred Web Store deploy step).
+ */
+export const PRIVACY_PAGE_PATH = 'src/privacy/privacy.html';
+
 /** The one-line "password never stored" assurance (F7-FR5 / D-2). */
 export const PASSWORD_NEVER_STORED =
   'Your password is never stored — only a session token is saved locally on this device.';

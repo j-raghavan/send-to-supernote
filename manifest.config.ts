@@ -50,6 +50,11 @@ export const manifest: chrome.runtime.ManifestV3 = {
   // request carries a browser `Origin` header; the DNR ruleset below strips the
   // `Origin` header on requests to the Supernote API hosts (only — scoped by
   // host_permissions). This keeps the flow fully client-side (D-3), no relay.
+  // `cookies` lets the extension read the `x-access-token` session cookie that
+  // cloud.supernote.com sets AFTER the user signs in on Supernote's own page —
+  // the connect flow Supernote-Cloud auth uses (its login is CAPTCHA/2FA-gated,
+  // so the extension never logs in itself). Scoped by host_permissions to the
+  // Supernote hosts only; the token never leaves the device (D-3).
   permissions: [
     'activeTab',
     'scripting',
@@ -57,6 +62,7 @@ export const manifest: chrome.runtime.ManifestV3 = {
     'storage',
     'notifications',
     'offscreen',
+    'cookies',
     'declarativeNetRequestWithHostAccess',
   ],
 

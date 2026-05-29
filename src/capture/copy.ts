@@ -2,19 +2,16 @@
  * Capture-mode UI copy (F4-FR5).
  *
  * Centralized, testable strings (not buried in the excluded UI shells) so the
- * popup/options can label the modes consistently. Full Page is explicitly
- * labeled "best-effort layout capture" to set fidelity expectations (R-3).
+ * popup/options can label the capture consistently.
  */
 import type { CaptureMode } from '@domain/capture';
 
 export const CAPTURE_MODE_LABELS: Record<CaptureMode, string> = {
   reader: 'Reader View',
-  fullpage: 'Full Page',
 };
 
 export const CAPTURE_MODE_DESCRIPTIONS: Record<CaptureMode, string> = {
   reader: 'A clean, reflow-friendly article — recommended for text.',
-  fullpage: 'Best-effort layout capture of the page as it appears. Fidelity is limited.',
 };
 
 /** The label for a capture mode (e.g. for a menu/toggle). */

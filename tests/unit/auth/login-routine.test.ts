@@ -1,6 +1,7 @@
 import { webcrypto } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  formatLoginError,
   LOGIN_PATH,
   NONCE_PATH,
   performLogin,
@@ -9,7 +10,6 @@ import {
 import { DEFAULT_PUBLIC_PROFILE, privateCloudProfile } from '@domain/delivery';
 import { loginHash } from '@domain/auth';
 import { FakeHttpClient } from '../../fakes/fake-http-client';
-import { FakeRandomSource } from '../../fakes/fake-random-source';
 
 async function sha256hex(input: string): Promise<string> {
   const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -17,7 +17,7 @@ async function sha256hex(input: string): Promise<string> {
 }
 
 function deps(http: FakeHttpClient): LoginDeps {
-  return { http, sha256hex, random: new FakeRandomSource() };
+  return { http, sha256hex };
 }
 
 describe('performLogin (F2-FR0)', () => {
@@ -44,8 +44,13 @@ describe('performLogin (F2-FR0)', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.token).toBe('tok-123');
-      expect(result.value.equipment).toMatch(/^[0-9a-f-]+$/);
+      // Matches the proven reference client: constant equipment "1", no equipmentNo.
+      expect(result.value.equipment).toBe('1');
     }
+    const loginBody = http.requests[1]!.body as Record<string, unknown>;
+    expect(loginBody.equipment).toBe('1');
+    expect(loginBody.equipmentNo).toBeUndefined();
+    expect(loginBody.browser).toBe('Chrome107');
     expect(http.urls[0]).toBe('https://viewer.supernote.com/api/official/user/query/random/code');
     expect(http.urls[1]).toBe('https://viewer.supernote.com/api/official/user/account/login/new');
   });
@@ -97,7 +102,7 @@ describe('performLogin (F2-FR0)', () => {
     expect(result.ok && result.value.equipment).toBe('fixed-equip');
     const loginBody = http.requests[1]!.body as Record<string, unknown>;
     expect(loginBody.equipment).toBe('fixed-equip');
-    expect(loginBody.equipmentNo).toBe('fixed-equip');
+    expect(loginBody.equipmentNo).toBeUndefined();
   });
 
   it('targets the private cloud base URL with the /api prefix', async () => {
@@ -213,5 +218,57 @@ describe('performLogin (F2-FR0)', () => {
     expect(headers.version).toBe('202407');
     expect(headers.equipmentNo).toBe('EQ-1');
     expect(headers.channel).toBe('web');
+  });
+
+  it('tags a nonce failure with step=nonce and the transport status (status readout)', async () => {
+    http.on(NONCE_PATH, { status: 403, json: { success: false } });
+    const result = await performLogin(deps(http), {
+      profile: DEFAULT_PUBLIC_PROFILE,
+      account: 'a@b.com',
+      password: 'pw',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.step).toBe('nonce');
+      expect(result.error.httpStatus).toBe(403);
+    }
+  });
+
+  it('tags a login failure with step=login and the transport status (status readout)', async () => {
+    http.on(NONCE_PATH, { status: 200, json: { success: true, randomCode: 'C' } }).on(LOGIN_PATH, {
+      status: 403,
+      json: { success: false, errorCode: 'E0401', errorMsg: 'no' },
+    });
+
+    const result = await performLogin(deps(http), {
+      profile: DEFAULT_PUBLIC_PROFILE,
+      account: 'a@b.com',
+      password: 'pw',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.step).toBe('login');
+      expect(result.error.httpStatus).toBe(403);
+    }
+  });
+});
+
+describe('formatLoginError', () => {
+  it('joins step, HTTP status, error code, and kind into one password-free line', () => {
+    expect(
+      formatLoginError({
+        kind: 'auth-failed',
+        errorCode: 'E0401',
+        message: 'bad',
+        step: 'login',
+        httpStatus: 403,
+      }),
+    ).toBe('login · HTTP 403 · E0401 · auth-failed');
+  });
+
+  it('omits absent fields and still reports the kind', () => {
+    expect(formatLoginError({ kind: 'unexpected-response', message: 'x' })).toBe(
+      'unexpected-response',
+    );
   });
 });

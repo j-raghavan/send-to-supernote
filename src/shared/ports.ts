@@ -9,7 +9,7 @@
  * Ports are added here as the FRs that need them are implemented; this file is
  * the single home for all of them.
  */
-import type { FullPageExtract, ReaderExtract } from '@domain/capture';
+import type { ReaderExtract } from '@domain/capture';
 import type { RenderOptions } from '@domain/conversion';
 
 /** Reasons the offscreen document may be created (subset we use). */
@@ -86,6 +86,12 @@ export interface HttpResponse {
  */
 export interface HttpClient {
   request(req: HttpRequest): Promise<HttpResponse>;
+  /**
+   * Download raw bytes (e.g. a PDF the user is already viewing, sent as-is).
+   * `bytes` is absent on a non-OK status. Kept on this port so all network still
+   * flows through the single seam (I-2/D-3).
+   */
+  getBytes(url: string): Promise<{ status: number; bytes?: Uint8Array }>;
 }
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -147,16 +153,13 @@ export interface Clock {
 }
 
 /**
- * Page-content extraction (F3/F4). The real adapters run in the content script
- * against a DOM CLONE for Reader (never mutating the live page — I-4) and
- * serialize the rendered DOM for Full Page. Tests inject canned extracts so the
- * capture use cases are pure-testable without a real DOM.
+ * Page-content extraction (F3). The real adapter captures the page's rendered
+ * HTML (I-4: never mutating the live page) and runs Readability off-page. Tests
+ * inject canned extracts so the capture use cases are pure-testable.
  */
 export interface Extractor {
-  /** Run Readability on a clone of the live document (F3-FR1). */
+  /** Extract the readable article from the active tab (F3-FR1). */
   extractReader(): Promise<ReaderExtract>;
-  /** Serialize the rendered page + relevant computed styles (F4-FR2). */
-  serializeFullPage(): Promise<FullPageExtract>;
 }
 
 /** Result of a render: a handle to the stored blob plus its byte size. */
@@ -185,4 +188,27 @@ export interface Renderer {
 export interface PermissionGranter {
   /** Request host access for an origin (e.g. "http://192.168.x.x:8080/*"). Returns whether granted. */
   request(origin: string): Promise<boolean>;
+}
+
+/**
+ * Reads browser cookies for a URL. Used by the Supernote-Cloud connect flow to
+ * pick up the `x-access-token` session cookie the official login page sets
+ * (sign-in is CAPTCHA/2FA-gated, so the extension never logs in itself). Real
+ * adapter wraps `chrome.cookies`; tests inject scripted cookie values.
+ */
+export interface CookieReader {
+  /** The value of cookie `name` for `url`, or undefined when absent. */
+  get(url: string, name: string): Promise<string | undefined>;
+}
+
+/**
+ * Opens/closes browser tabs for the connect flow (open the official login page,
+ * close it once the session cookie is captured). Real adapter wraps
+ * `chrome.tabs`; tests inject a recorder.
+ */
+export interface TabController {
+  /** Open a new tab at `url`; resolves to the created tab id (when known). */
+  open(url: string): Promise<number | undefined>;
+  /** Close the tab with the given id (no-op if already gone). */
+  close(tabId: number): Promise<void>;
 }

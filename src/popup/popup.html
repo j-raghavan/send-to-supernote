@@ -13,28 +13,40 @@
         <span class="hdr__spacer"></span>
       </header>
 
-      <!-- Sign-in view: pick ONE provider, then sign in. -->
+      <!-- Sign-in view: pick ONE provider, then connect. -->
       <section id="view-signin" class="view" hidden>
         <div class="seg">
           <button id="seg-cloud" class="seg__btn is-active" type="button">Supernote Cloud</button>
           <button id="seg-private" class="seg__btn" type="button">Private Cloud</button>
         </div>
-        <form id="signin-form" class="form">
+
+        <!-- Supernote Cloud: sign in on Supernote's own page; we capture the session. -->
+        <div id="cloud-connect" class="form">
+          <p class="muted">
+            Sign in on Supernote's own page (it handles the captcha and any verification code). The
+            extension connects automatically and never sees your password.
+          </p>
+          <button id="connect-cloud-btn" class="btn btn--primary" type="button">
+            Connect Supernote Cloud
+          </button>
+          <p id="cloud-connect-status" class="muted" hidden></p>
+        </div>
+
+        <!-- Private Cloud: your own server URL + credentials. -->
+        <form id="signin-form" class="form" hidden>
           <input
             id="pc-url"
             class="input"
             type="url"
             placeholder="https://supernote.home.lan"
             autocomplete="off"
-            hidden
           />
           <input
             id="email"
             class="input"
             type="email"
-            placeholder="Supernote email"
+            placeholder="Account email"
             autocomplete="username"
-            required
           />
           <input
             id="password"
@@ -42,24 +54,21 @@
             type="password"
             placeholder="Password"
             autocomplete="current-password"
-            required
           />
           <p id="signin-warning" class="warning" hidden></p>
           <button id="signin-btn" class="btn btn--primary" type="submit">Sign in</button>
           <p id="signin-error" class="error" hidden></p>
+          <p id="signin-status" class="status" hidden></p>
         </form>
+
         <p id="signin-note" class="muted"></p>
       </section>
 
-      <!-- Connected view: defaults are enough — one tap to send. -->
+      <!-- Connected view: one tap to send (clean article as EPUB, or the PDF as-is). -->
       <section id="view-connected" class="view" hidden>
         <div class="page">
           <span class="page__label">Sending this page</span>
           <span id="page-title" class="page__title">…</span>
-        </div>
-        <div class="seg">
-          <button id="mode-reader" class="seg__btn" type="button">Reader View</button>
-          <button id="mode-fullpage" class="seg__btn" type="button">Full Page</button>
         </div>
         <button id="send" class="btn btn--primary btn--lg" type="button">Send to Supernote</button>
         <p id="send-status" class="muted" hidden></p>

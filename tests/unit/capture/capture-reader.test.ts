@@ -32,13 +32,13 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
     expect(result.ok && result.value.byline).toBeUndefined();
   });
 
-  it('returns empty-article (try Full Page) when extraction yields no article (F3-AC4)', async () => {
+  it('returns empty-article when extraction yields no content (F3-AC4)', async () => {
     const extractor = new FakeExtractor({ title: 'T', content: '', length: 0 });
     const result = await captureReader({ extractor });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('empty-article');
-      expect(result.error.message).toContain('Full Page');
+      expect(result.error.message).toContain('readable content');
     }
   });
 
@@ -48,7 +48,7 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('extraction-failed');
-      expect(result.error.message).toContain('Full Page');
+      expect(result.error.message).toContain("Couldn't read this page");
     }
   });
 });

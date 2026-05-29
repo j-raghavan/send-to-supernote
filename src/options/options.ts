@@ -1,20 +1,19 @@
 /**
  * Options shell (F7) — DOM wiring only; all decisions live in the covered
- * options-view-model, SettingsStore, and use cases. Renders the connection
- * panel + capture defaults + target + confirm-filename toggle and persists each
- * change immediately to chrome.storage.local (F7-FR1/FR4). Coverage-excluded
- * host bootstrap (architecture §9.3). Folder picker (FR2), Private Cloud (FR3),
- * privacy link (FR5) and onboarding (FR6) are wired in their own commits.
+ * options-view-model, SettingsStore, and use cases. Renders the Supernote Cloud
+ * connect state, Private Cloud form, capture defaults, destination folder, and
+ * onboarding/privacy, persisting each change immediately to chrome.storage.local
+ * (F7-FR1/FR4). Coverage-excluded host bootstrap (architecture §9.3).
  */
 /* c8 ignore start */
+import './options.css';
 import { ChromeStorageLocal } from '../background/chrome-storage';
 import { FetchHttpClient } from '../background/fetch-http-client';
 import { ChromePermissionGranter } from '../background/permissions';
-import { webCryptoSha256Hex, WebCryptoRandomSource } from '../background/crypto';
+import { webCryptoSha256Hex } from '../background/crypto';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
 import { resolveSessionState } from '@auth/connection-state';
-import { connectAccount } from '@auth/connect-account';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
@@ -23,13 +22,8 @@ import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
 import { pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
-import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_POLICY_URL } from './privacy-copy';
-import {
-  buildOptionsView,
-  parseFormatChange,
-  parseModeChange,
-  parseTargetChange,
-} from './options-view-model';
+import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
+import { buildOptionsView, parseFormatChange, parseTargetChange } from './options-view-model';
 
 const store = new ChromeStorageLocal();
 const settings = new SettingsStore(store);
@@ -45,21 +39,21 @@ async function render(): Promise<void> {
   const account = await tokens.getAccount();
   const view = buildOptionsView(session, account, current);
 
+  const logo = byId<HTMLImageElement>('logo');
+  if (logo) logo.src = chrome.runtime.getURL('icons/icon512.png');
+
   const status = byId('connection-status');
   if (status) {
     status.textContent = view.connectionStatus;
   }
 
-  const mode = byId<HTMLSelectElement>('default-mode');
-  if (mode) {
-    mode.value = view.defaultMode;
-    mode.addEventListener('change', () => {
-      const parsed = parseModeChange(mode.value);
-      if (parsed) {
-        void settings.setDefaultMode(parsed);
-      }
-    });
-  }
+  // Toggle the Supernote Cloud connected vs disconnected panels.
+  const connectedPanel = byId('cloud-connected');
+  if (connectedPanel) connectedPanel.hidden = !view.connected;
+  const disconnectedPanel = byId('cloud-disconnected');
+  if (disconnectedPanel) disconnectedPanel.hidden = view.connected;
+  const chip = byId('account-chip');
+  if (chip) chip.textContent = view.account ?? 'Connected to Supernote Cloud';
 
   const format = byId<HTMLSelectElement>('default-format');
   if (format) {
@@ -107,40 +101,30 @@ function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
   void chrome.runtime.sendMessage({ type: 'reconnected', target });
 }
 
-/** Wire the public-Cloud Connect / Disconnect form (F2 via Options, F7-FR1). */
+/**
+ * Wire the public-Cloud Connect / Disconnect form (F2 via Options, F7-FR1).
+ * Supernote Cloud sign-in is CAPTCHA/2FA-gated, so the extension does not log in
+ * itself: it opens Supernote's official login and captures the session cookie
+ * (handled in the service worker). The form just kicks that off.
+ */
 function wireConnection(): void {
-  const form = byId<HTMLFormElement>('connect-form');
-  const email = byId<HTMLInputElement>('email');
-  const password = byId<HTMLInputElement>('password');
-  const disconnectButton = byId<HTMLButtonElement>('disconnect');
-
-  form?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    void connectAccount(
-      {
-        http: new FetchHttpClient(),
-        sha256hex: webCryptoSha256Hex,
-        random: new WebCryptoRandomSource(),
-        tokens,
-      },
-      { account: email?.value ?? '', password: password?.value ?? '' },
-    ).then((result) => {
-      if (password) {
-        password.value = ''; // never keep the password in the DOM longer than needed
-      }
-      if (result.ok) {
-        notifyReconnected('cloud');
-        void render();
-      } else {
-        const status = byId('connection-status');
-        if (status) {
-          status.textContent = `Could not connect: ${result.error.message}`;
+  byId<HTMLButtonElement>('connect-cloud')?.addEventListener('click', () => {
+    const hint = byId('connect-cloud-hint');
+    void chrome.runtime
+      .sendMessage({ type: 'connect-cloud' })
+      .then((res: { ok?: boolean } | undefined) => {
+        if (res?.ok === true) {
+          notifyReconnected('cloud');
+          void render();
+        } else if (hint) {
+          hint.textContent =
+            'Finish signing in on the Supernote tab — this page updates once connected.';
+          hint.hidden = false;
         }
-      }
-    });
+      });
   });
 
-  disconnectButton?.addEventListener('click', () => {
+  byId<HTMLButtonElement>('disconnect')?.addEventListener('click', () => {
     void disconnectPublicCloud({ store }).then(() => render());
   });
 }
@@ -150,8 +134,8 @@ function wirePrivateCloud(): void {
   const input = byId<HTMLInputElement>('pc-base-url');
   const saveButton = byId<HTMLButtonElement>('pc-save');
   const warning = byId('pc-http-warning');
-  const emailInput = byId<HTMLInputElement>('email');
-  const passwordInput = byId<HTMLInputElement>('password');
+  const emailInput = byId<HTMLInputElement>('pc-email');
+  const passwordInput = byId<HTMLInputElement>('pc-password');
   if (!input || !saveButton) {
     return;
   }
@@ -172,7 +156,6 @@ function wirePrivateCloud(): void {
       {
         http: new FetchHttpClient(),
         sha256hex: webCryptoSha256Hex,
-        random: new WebCryptoRandomSource(),
         store,
       },
       {
@@ -213,9 +196,9 @@ function renderOnboarding(target: 'cloud' | 'privatecloud'): void {
 function renderPrivacy(): void {
   const link = byId<HTMLAnchorElement>('privacy-link');
   if (link) {
-    link.href = PRIVACY_POLICY_URL;
+    link.href = chrome.runtime.getURL(PRIVACY_PAGE_PATH);
   }
-  const note = document.querySelector('#connection .note');
+  const note = byId('password-note');
   if (note) {
     note.textContent = PASSWORD_NEVER_STORED;
   }

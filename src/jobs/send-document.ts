@@ -17,7 +17,7 @@
  */
 import { ok, type Result } from '@shared/result';
 import type { Badge, BlobTransfer, Clock, Notifier } from '@shared/ports';
-import { type CaptureMode, type CapturedDocument } from '@domain/capture';
+import { type CaptureMode } from '@domain/capture';
 import { contentTypeFor, type OutputFormat } from '@domain/conversion';
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure, findDocumentFolderId, ROOT_DIRECTORY_ID } from '@domain/delivery';
@@ -28,8 +28,7 @@ import { type DeliveryOutcome, routeDeliveryFailure } from '@delivery/route-deli
 import { canFallbackToPrivate, offerPrivateCloudFallback } from '@delivery/fallback';
 import { DEFAULT_FEATURE_FLAGS, type FeatureFlags, isPathEnabled } from '@shared/feature-flags';
 import type { AuthFailureDeps } from '@auth/handle-auth-failure';
-import { type CaptureError, type CaptureReaderDeps, captureReader } from '@capture/capture-reader';
-import { type CaptureFullPageDeps, captureFullPage } from '@capture/capture-fullpage';
+import { type CaptureReaderDeps, captureReader } from '@capture/capture-reader';
 import { captureErrorNotification } from '@capture/capture-error-notification';
 import { type RenderDeps, renderDocument } from '@conversion/render-document';
 import {
@@ -58,12 +57,18 @@ export interface SendRequest {
   /** When true, the user may edit the filename before upload (F6-FR4). */
   confirmFilename: boolean;
   page: PageContext;
+  /**
+   * Pre-rendered bytes to upload as-is, bypassing capture + render. Used when the
+   * page is ALREADY a document (e.g. a PDF open in the browser's viewer) — there
+   * is nothing to extract/convert, so the bytes are sent directly.
+   */
+  source?: { bytes: Uint8Array; contentType: string; title: string };
 }
 
 export interface SendDocumentDeps {
   /** Resolve the DeliveryPort for a target (cloud now; private in F8). */
   resolveDelivery: (target: Target) => DeliveryPort;
-  capture: CaptureReaderDeps & CaptureFullPageDeps;
+  capture: CaptureReaderDeps;
   render: RenderDeps;
   blobs: BlobTransfer;
   notifier: Notifier;
@@ -138,68 +143,76 @@ export async function sendDocument(
     return fail('not-connected', 'Not connected', 'failed');
   }
 
-  // capturing
-  await deps.notifier.notify(NOTE_CAPTURING);
-  const captured = await capture(deps, req.mode);
-  if (!captured.ok) {
-    await deps.notifier.notify(captureErrorNotification(captured.error));
-    await deps.badge.set('error');
-    return fail('capture', captured.error.message, 'failed');
-  }
+  // Resolve the bytes to upload: either a pre-rendered source (PDF page sent
+  // as-is) or capture -> render. `blobHandle` is set only for the render path so
+  // its IndexedDB blob is cleaned up; a source upload has no handle.
+  let bytes: Uint8Array;
+  let contentType: string;
+  let title: string;
+  let blobHandle: string | undefined;
 
-  // converting
-  await deps.notifier.notify(NOTE_CONVERTING);
-  const rendered = await renderDocument(deps.render, {
-    document: captured.value,
-    format: req.format,
-  });
-  if (!rendered.ok) {
-    await deps.notifier.notify(noteConversionFailed(rendered.error.message));
-    await deps.badge.set('error');
-    return fail('render', rendered.error.message, 'failed');
-  }
+  if (req.source) {
+    bytes = req.source.bytes;
+    contentType = req.source.contentType;
+    title = req.source.title;
+  } else {
+    // capturing
+    await deps.notifier.notify(NOTE_CAPTURING);
+    const captured = await captureReader(deps.capture);
+    if (!captured.ok) {
+      await deps.notifier.notify(captureErrorNotification(captured.error));
+      await deps.badge.set('error');
+      return fail('capture', captured.error.message, 'failed');
+    }
 
-  // hashing: read bytes back from the blob handle (F1-FR6)
-  const stored = await deps.blobs.get(rendered.value.handle);
-  if (stored === undefined) {
-    await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
-    await deps.badge.set('error');
-    return fail('render', 'Rendered blob missing', 'failed');
+    // converting
+    await deps.notifier.notify(NOTE_CONVERTING);
+    const rendered = await renderDocument(deps.render, {
+      document: captured.value,
+      format: req.format,
+    });
+    if (!rendered.ok) {
+      await deps.notifier.notify(noteConversionFailed(rendered.error.message));
+      await deps.badge.set('error');
+      return fail('render', rendered.error.message, 'failed');
+    }
+
+    // hashing: read bytes back from the blob handle (F1-FR6)
+    const stored = await deps.blobs.get(rendered.value.handle);
+    if (stored === undefined) {
+      await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
+      await deps.badge.set('error');
+      return fail('render', 'Rendered blob missing', 'failed');
+    }
+    bytes = stored.bytes;
+    contentType = contentTypeFor(req.format);
+    title = captured.value.title;
+    blobHandle = rendered.value.handle;
   }
 
   const port = deps.resolveDelivery(req.target);
 
   // name: resolve destination folder + de-dupe against a REAL listing (F6-FR3/c)
   const destination = await resolveDestination(port, req.folderId);
-  const fileName = await resolveFileName(deps, req, port, destination, captured.value);
+  const fileName = await resolveFileName(deps, req, port, destination, title);
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
   await deps.notifier.notify(noteUploading(fileName));
-  const uploadInput = {
-    bytes: stored.bytes,
-    contentType: contentTypeFor(req.format),
-    directoryId: destination,
-    fileName,
-  };
+  const uploadInput = { bytes, contentType, directoryId: destination, fileName };
   const uploaded = await port.uploadDocument(uploadInput);
 
   if (!uploaded.ok) {
-    return finishDeliveryFailure(deps, uploaded.error, req, uploadInput, rendered.value.handle);
+    return finishDeliveryFailure(deps, uploaded.error, req, uploadInput, blobHandle);
   }
 
   // finish verified by the adapter -> drive the FSM to done (I-3)
   const finalState = completeFinish('finishing', true);
-  await cleanupBlob(deps, rendered.value.handle);
+  if (blobHandle !== undefined) {
+    await cleanupBlob(deps, blobHandle);
+  }
   await deps.notifier.notify(noteSent(uploaded.value.fileName));
   await deps.badge.set('idle');
   return ok({ fileName: uploaded.value.fileName, state: finalState as 'done' });
-}
-
-async function capture(
-  deps: SendDocumentDeps,
-  mode: CaptureMode,
-): Promise<Result<CapturedDocument, CaptureError>> {
-  return mode === 'fullpage' ? captureFullPage(deps.capture) : captureReader(deps.capture);
 }
 
 /** Resolve the destination folder id: explicit choice, else the Document/ folder. */
@@ -223,12 +236,12 @@ async function resolveFileName(
   req: SendRequest,
   port: DeliveryPort,
   directoryId: string,
-  document: CapturedDocument,
+  title: string,
 ): Promise<string> {
   const listed = await port.listFolders(directoryId);
   const existingNames = listed.ok ? listed.value.map((f) => f.name) : [];
   const suggested = buildUploadFilename({
-    title: document.title,
+    title,
     hostname: req.page.hostname,
     epochMs: deps.clock.now(),
     format: req.format,
@@ -245,7 +258,7 @@ async function finishDeliveryFailure(
   failure: DeliveryFailure,
   req: SendRequest,
   uploadInput: UploadInput,
-  blobHandle: string,
+  blobHandle: string | undefined,
 ): Promise<Result<SendSuccess, SendError>> {
   const outcome: DeliveryOutcome = await routeDeliveryFailure(failure, deps.authDeps, {
     targetLabel: req.target === 'privatecloud' ? 'Private Cloud' : 'Supernote',
@@ -273,7 +286,9 @@ async function finishDeliveryFailure(
       { ...uploadInput, directoryId: destination },
     );
     if (fb.kind === 'sent') {
-      await deps.blobs.delete(blobHandle);
+      if (blobHandle !== undefined) {
+        await deps.blobs.delete(blobHandle);
+      }
       await deps.notifier.notify(noteSent(fb.result.fileName));
       await deps.badge.set('idle');
       return ok({

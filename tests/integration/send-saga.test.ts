@@ -90,7 +90,7 @@ async function harness(opts: { connected?: boolean } = {}): Promise<Harness> {
   const deps: SendDocumentDeps = {
     resolveDelivery: (_t: Target) => adapter,
     capture: {
-      extractor: new FakeExtractor(ARTICLE, { title: 'My Article', html: '<html>x</html>' }),
+      extractor: new FakeExtractor(ARTICLE),
     },
     render: { renderer: new FakeRenderer(2048, blobs) },
     blobs,

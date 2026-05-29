@@ -38,6 +38,7 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
       'storage',
       'notifications',
       'offscreen',
+      'cookies',
       'declarativeNetRequestWithHostAccess',
     ]);
   });

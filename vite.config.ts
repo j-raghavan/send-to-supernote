@@ -34,6 +34,9 @@ export default defineConfig({
       // manifest (no <all_urls> WAR — F1-FR2 / Security).
       input: {
         offscreen: fileURLToPath(new URL('./src/offscreen/offscreen.html', import.meta.url)),
+        // Bundled privacy page the popup/Options "Privacy" links open (works
+        // offline; not web-accessible, opened only by the extension's own UI).
+        privacy: fileURLToPath(new URL('./src/privacy/privacy.html', import.meta.url)),
       },
     },
   },

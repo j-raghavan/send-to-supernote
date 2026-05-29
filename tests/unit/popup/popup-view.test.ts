@@ -32,11 +32,12 @@ describe('buildPopupView (F6-FR6)', () => {
     expect(view.status).toContain('Not connected');
   });
 
-  it('treats connected-without-account as not sendable status text', () => {
+  it('shows a connected status without an email (cookie-capture cloud connect)', () => {
     const view = buildPopupView('connected', undefined, settings);
-    // canSend is true (session), but the status line falls back gracefully
+    // The cookie-capture cloud flow has no email, so the status reflects the
+    // connection generically rather than falling back to "Not connected".
     expect(view.canSend).toBe(true);
-    expect(view.status).toContain('Not connected');
+    expect(view.status).toBe('Connected to Supernote Cloud');
   });
 });
 
@@ -46,12 +47,10 @@ describe('popupSendRequest (F6-FR6 one-off pick)', () => {
       settings,
       { hostname: 'example.com' },
       {
-        mode: 'fullpage',
         format: 'epub',
         target: 'privatecloud',
       },
     );
-    expect(req.mode).toBe('fullpage');
     expect(req.format).toBe('epub');
     expect(req.target).toBe('privatecloud');
   });

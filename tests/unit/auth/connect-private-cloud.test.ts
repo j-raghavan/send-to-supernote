@@ -8,7 +8,6 @@ import { LOGIN_PATH, NONCE_PATH } from '../../../src/auth/login-routine';
 import { StorageKeys } from '@shared/storage-keys';
 import { FakeHttpClient } from '../../fakes/fake-http-client';
 import { FakeKeyValueStore } from '../../fakes/fake-key-value-store';
-import { FakeRandomSource } from '../../fakes/fake-random-source';
 
 async function sha256hex(input: string): Promise<string> {
   const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -23,7 +22,7 @@ describe('connectPrivateCloud (F7-FR3 / F8-FR1)', () => {
   beforeEach(() => {
     http = new FakeHttpClient();
     kv = new FakeKeyValueStore();
-    deps = { http, sha256hex, random: new FakeRandomSource(), store: kv };
+    deps = { http, sha256hex, store: kv };
   });
 
   it('connects against the base URL and persists only the JWT + baseUrl + account', async () => {

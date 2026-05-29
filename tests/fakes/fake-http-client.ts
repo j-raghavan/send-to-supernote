@@ -10,6 +10,12 @@ type Responder = (req: HttpRequest) => HttpResponse | Promise<HttpResponse>;
  */
 export class FakeHttpClient implements HttpClient {
   readonly requests: HttpRequest[] = [];
+  readonly byteRequests: string[] = [];
+  /** Scripted byte downloads by URL substring (for getBytes). */
+  private readonly byteRoutes: Array<{
+    match: string;
+    result: { status: number; bytes?: Uint8Array };
+  }> = [];
   private readonly routes: Array<{ match: string; responder: Responder }> = [];
 
   /** Register a response for any request whose URL contains `match`. */
@@ -26,6 +32,18 @@ export class FakeHttpClient implements HttpClient {
       throw new Error(`FakeHttpClient: no stub for ${req.method} ${req.url}`);
     }
     return route.responder(req);
+  }
+
+  /** Register a byte-download response for any URL containing `match`. */
+  onBytes(match: string, result: { status: number; bytes?: Uint8Array }): this {
+    this.byteRoutes.push({ match, result });
+    return this;
+  }
+
+  getBytes(url: string): Promise<{ status: number; bytes?: Uint8Array }> {
+    this.byteRequests.push(url);
+    const route = this.byteRoutes.find((r) => url.includes(r.match));
+    return Promise.resolve(route?.result ?? { status: 404 });
   }
 
   /** URLs of all recorded requests, in order. */

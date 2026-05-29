@@ -28,6 +28,11 @@ export class OffscreenRenderer implements Renderer {
     const message: RenderMessage = { type: 'render', html, options };
     const reply: unknown = await chrome.runtime.sendMessage(message);
     await this.manager.release();
+    if (reply !== null && typeof reply === 'object' && 'error' in reply) {
+      const detail = String(reply.error);
+      console.warn('[send-to-supernote] offscreen render error:', detail);
+      throw new Error(detail);
+    }
     if (reply === undefined || reply === null) {
       throw new Error('Offscreen render returned no result.');
     }

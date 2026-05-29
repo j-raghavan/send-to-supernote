@@ -13,6 +13,8 @@ export const StorageKeys = {
   account: 'supernote.account',
   equipment: 'supernote.equipment',
   apiHost: 'supernote.apiHost',
+  /** Transient: id of the official-login tab while a cloud connect is pending. */
+  cloudConnectTabId: 'supernote.connectTabId',
 
   // Capture/send settings (F7) — declared here for the single contract; written in F7.
   defaultMode: 'settings.defaultMode',

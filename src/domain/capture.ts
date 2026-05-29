@@ -1,14 +1,14 @@
 /**
- * Capture domain (F3/F4) — pure value types for extracted page content.
+ * Capture domain (F3) — pure value types for extracted page content.
  *
- * The two capture modes both yield a `CapturedDocument` (title + HTML) that the
- * conversion context renders to a blob. Reader View adds article metadata. No
- * DOM, no I/O here — the actual DOM extraction lives in the content-script
- * adapters (Extractor port impls); the decisions (empty -> "try Full Page",
- * clone-only) live in the capture use cases.
+ * Capture yields a `CapturedDocument` (title + HTML) that the conversion context
+ * renders to a blob. No DOM, no I/O here — the actual DOM extraction lives in
+ * the content-script / offscreen adapters (Extractor port impls); the decisions
+ * (empty-content guard, clone-only) live in the capture use cases.
  */
 
-export type CaptureMode = 'reader' | 'fullpage';
+/** Capture mode. Reader extraction is the only mode (Full Page was removed). */
+export type CaptureMode = 'reader';
 
 /** Raw result of running Readability on a document clone (F3-FR1). */
 export interface ReaderExtract {
@@ -21,13 +21,6 @@ export interface ReaderExtract {
   length: number;
 }
 
-/** Raw result of serializing the rendered page for Full Page (F4-FR2). */
-export interface FullPageExtract {
-  title: string;
-  /** Serialized rendered DOM + inlined relevant styles. */
-  html: string;
-}
-
 /** Normalized captured document handed to the conversion context. */
 export interface CapturedDocument {
   mode: CaptureMode;
@@ -37,8 +30,8 @@ export interface CapturedDocument {
 }
 
 /**
- * True when a Reader extract did not yield a usable article (F3-FR5): no body
- * content or a length below a small floor. Used to surface "try Full Page"
+ * True when a Reader extract did not yield usable content (F3-FR5): no body
+ * content or a length below a small floor. Used to surface a clear error
  * instead of producing an empty document.
  */
 const MIN_ARTICLE_LENGTH = 50;

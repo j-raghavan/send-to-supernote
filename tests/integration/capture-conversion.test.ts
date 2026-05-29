@@ -1,32 +1,26 @@
 /**
- * F3/F4 capture → conversion behavior tests (mocked Extractor + Renderer fakes).
+ * F3 capture → conversion behavior tests (mocked Extractor + Renderer fakes).
  *
- * These wire the covered use cases (captureReader / captureFullPage ->
- * renderDocument) and the layout/EPUB domain together to cover the Acceptance
- * Criteria end-to-end for what Batch 2 built. The DOM-bound rendering itself is
- * the coverage-excluded offscreen adapter; here we assert the decisions and the
- * flow that drive a correct paginated PDF / valid EPUB. No network/chrome/DOM.
+ * These wire the covered use cases (captureReader -> renderDocument) and the
+ * EPUB/image domain together to cover the Acceptance Criteria end-to-end. The
+ * DOM-bound rendering itself is the coverage-excluded offscreen adapter; here we
+ * assert the decisions and the flow that drive a correct paginated PDF / valid
+ * EPUB. No network/chrome/DOM.
  *
  *  - F3-AC1: a long-form article captures + renders to a paginated PDF carrying
- *            the article title (multi-page geometry via tilePages).
+ *            the article title.
  *  - F3-AC2: defaultFormat=epub produces a structurally valid reflowable EPUB.
- *  - F4-AC1: a multi-screen page paginates over the FULL document height.
- *  - F4-AC2: a Full Page with cross-origin (canvas-tainting) images is produced
- *            with those images omitted — never aborting the capture.
+ *  - F3-AC4: cross-origin (canvas-tainting) images are omitted (or inlined when
+ *            granted) before rendering — never aborting the send.
  */
 import { describe, expect, it } from 'vitest';
 import { captureReader } from '../../src/capture/capture-reader';
-import { captureFullPage } from '../../src/capture/capture-fullpage';
 import { renderDocument } from '../../src/conversion/render-document';
 import { buildEpubFiles } from '../../src/conversion/epub-builder';
 import { type ImageFetcher } from '../../src/conversion/inline-images';
-import { scrollPlan, tilePages } from '@domain/fullpage-layout';
 import { canFetchImage, classifyImage } from '@domain/image-policy';
 import { FakeExtractor } from '../fakes/fake-extractor';
 import { FakeRenderer } from '../fakes/fake-renderer';
-
-const A4_PAGE_HEIGHT = 1123; // px @ 96dpi, for pagination math
-const MAX_PAGES = 50;
 
 describe('F3-AC1 — long-form article → multi-page PDF with the title', () => {
   it('captures the article and renders a paginated PDF carrying the title', async () => {
@@ -50,9 +44,8 @@ describe('F3-AC1 — long-form article → multi-page PDF with the title', () =>
     );
 
     expect(rendered.ok).toBe(true);
-    // Reader PDF lays out HTML directly (not rasterized) and paginates.
+    // PDF lays out HTML directly and paginates.
     expect(renderer.calls[0]!.options.paginate).toBe(true);
-    expect(renderer.calls[0]!.options.rasterize).toBe(false);
     // The rendered HTML carries the article title + body (becomes the PDF text).
     expect(renderer.calls[0]!.html).toContain('The Long Read');
     expect(renderer.calls[0]!.html).toContain('Substantial article prose');
@@ -79,9 +72,8 @@ describe('F3-AC2 — defaultFormat=epub → a valid reflowable EPUB', () => {
     );
 
     expect(rendered.ok && rendered.value.contentType).toBe('application/epub+zip');
-    // EPUB is reflowable: not paginated, not rasterized.
+    // EPUB is reflowable: not paginated.
     expect(renderer.calls[0]!.options.paginate).toBe(false);
-    expect(renderer.calls[0]!.options.rasterize).toBe(false);
   });
 
   it('the EPUB file set is structurally valid (mimetype-first/uncompressed, opf, nav, chapter)', () => {
@@ -111,63 +103,21 @@ describe('F3-AC2 — defaultFormat=epub → a valid reflowable EPUB', () => {
   });
 });
 
-describe('F4-AC1 — multi-screen page → paginated PDF over the full height', () => {
-  it('captures Full Page and rasterizes to a paginated PDF', async () => {
-    const extractor = new FakeExtractor(undefined, {
-      title: 'Tall Recipe',
-      html: '<html><body>'.concat('<section>row</section>'.repeat(60), '</body></html>'),
-    });
-    const renderer = new FakeRenderer();
-
-    const captured = await captureFullPage({ extractor });
-    expect(captured.ok).toBe(true);
-    if (!captured.ok) return;
-    expect(captured.value.mode).toBe('fullpage');
-
-    const rendered = await renderDocument(
-      { renderer },
-      { document: captured.value, format: 'pdf' },
-    );
-
-    expect(rendered.ok).toBe(true);
-    // Full Page PDF rasterizes via html2canvas (F4-FR2) and paginates.
-    expect(renderer.calls[0]!.options.rasterize).toBe(true);
-    expect(renderer.calls[0]!.options.paginate).toBe(true);
-  });
-
-  it('paginates over the FULL document height (last tile covers the remainder)', () => {
-    // A document 3.5 pages tall → 4 tiles covering 0..totalHeight, none lost.
-    const totalHeight = Math.round(A4_PAGE_HEIGHT * 3.5);
-    const { tiles, capped } = tilePages(totalHeight, A4_PAGE_HEIGHT, MAX_PAGES);
-
-    expect(capped).toBe(false);
-    expect(tiles).toHaveLength(4);
-    expect(tiles[0]!.top).toBe(0);
-    // The tiles tile the whole height with no gap and no overrun.
-    const lastTile = tiles[tiles.length - 1]!;
-    expect(lastTile.top + lastTile.height).toBe(totalHeight);
-    // The scroll plan visits every viewport step and finishes at the bottom.
-    const plan = scrollPlan(totalHeight, A4_PAGE_HEIGHT);
-    expect(plan[0]).toBe(0);
-    expect(plan[plan.length - 1]).toBe(totalHeight - A4_PAGE_HEIGHT);
-  });
-});
-
-describe('F4-AC2 — cross-origin images: produced with taints omitted, never aborts', () => {
+describe('F3-AC4 — cross-origin images: rendered with taints omitted, never aborts', () => {
   const PAGE = 'https://recipes.example.com/cake';
 
   it('classifies a canvas-tainting cross-origin image as a fetch candidate, gated by grant', () => {
     // A cross-origin image is a fetch candidate; if its origin is NOT granted it
-    // must be omitted (not drawn → no canvas taint), never aborting capture.
+    // must be omitted (not drawn → no canvas taint), never aborting the send.
     expect(classifyImage('https://cdn.thirdparty.com/photo.jpg', PAGE)).toBe('fetch');
     expect(canFetchImage('https://cdn.thirdparty.com/photo.jpg', PAGE, [])).toBe(false);
     // A same-origin image is safe to draw directly.
     expect(classifyImage('/img/local.png', PAGE)).toBe('safe');
   });
 
-  it('renders the Full Page with an un-fetchable cross-origin image omitted (no error)', async () => {
+  it('renders with an un-fetchable cross-origin image omitted (no error)', async () => {
     const captured = {
-      mode: 'fullpage' as const,
+      mode: 'reader' as const,
       title: 'Cake',
       html: '<h1>Cake</h1><img src="https://cdn.thirdparty.com/photo.jpg"><p>Steps.</p>',
     };
@@ -180,7 +130,7 @@ describe('F4-AC2 — cross-origin images: produced with taints omitted, never ab
       { document: captured, format: 'pdf' },
     );
 
-    // Capture/render still succeeds; the tainting image is gone, content stays.
+    // The render still succeeds; the tainting image is gone, content stays.
     expect(rendered.ok).toBe(true);
     expect(renderer.calls[0]!.html).not.toContain('cdn.thirdparty.com');
     expect(renderer.calls[0]!.html).toContain('<h1>Cake</h1>');
@@ -189,7 +139,7 @@ describe('F4-AC2 — cross-origin images: produced with taints omitted, never ab
 
   it('inlines a granted cross-origin image instead of omitting it', async () => {
     const captured = {
-      mode: 'fullpage' as const,
+      mode: 'reader' as const,
       title: 'Cake',
       html: '<img src="https://cdn.thirdparty.com/photo.jpg">',
     };

@@ -52,10 +52,7 @@ async function harness(opts: { connected?: boolean } = {}): Promise<Harness> {
   const deps: SendDocumentDeps = {
     resolveDelivery: () => port,
     capture: {
-      extractor: new FakeExtractor(ARTICLE, {
-        title: 'My Article',
-        html: '<html><body>x</body></html>',
-      }),
+      extractor: new FakeExtractor(ARTICLE),
     },
     render: { renderer: new FakeRenderer(2048, blobs) },
     blobs,
@@ -90,6 +87,26 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(h.port.uploadCalls[0]!.contentType).toBe('application/pdf');
   });
 
+  it('uploads a pre-rendered source (PDF page) as-is, skipping capture + render', async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
+    const result = await sendDocument(
+      h.deps,
+      req({ format: 'pdf', source: { bytes, contentType: 'application/pdf', title: 'paper' } }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(h.port.uploadCalls).toHaveLength(1);
+    // The exact source bytes are sent — not a captured/rendered document.
+    expect(h.port.uploadCalls[0]!.bytes).toBe(bytes);
+    expect(h.port.uploadCalls[0]!.contentType).toBe('application/pdf');
+    const titles = h.notifier.notifications.map((n) => n.title);
+    expect(titles).not.toContain('Capturing');
+    expect(titles).not.toContain('Converting');
+    expect(titles).toContain('Uploading');
+    expect(titles.at(-1)).toBe('Sent to Supernote');
+    expect(h.badge.current).toBe('idle');
+  });
+
   it('emits progress notifications then a success toast, and ends idle', async () => {
     await sendDocument(h.deps, req());
     const titles = h.notifier.notifications.map((n) => n.title);
@@ -115,19 +132,14 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(disconnected.port.uploadCalls).toHaveLength(0);
   });
 
-  it('captures Full Page when the request mode is fullpage', async () => {
-    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
-    expect(result.ok).toBe(true);
-  });
-
-  it('surfaces "try Full Page" and aborts on an empty reader extraction (F3-FR5)', async () => {
+  it('surfaces a capture error and aborts on an empty reader extraction (F3-FR5)', async () => {
     h.deps.capture = { extractor: new FakeExtractor({ title: 'T', content: '', length: 0 }) };
     const result = await sendDocument(h.deps, req());
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('capture');
     }
-    expect(h.notifier.notifications.some((n) => n.message.includes('Full Page'))).toBe(true);
+    expect(h.notifier.notifications.some((n) => n.message.includes('readable content'))).toBe(true);
     expect(h.badge.current).toBe('error');
   });
 
@@ -262,6 +274,24 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     }
     // The already-converted blob was re-sent to the PC adapter (no re-capture).
     expect(pcPort.uploadCalls).toHaveLength(1);
+    expect(h.badge.current).toBe('idle');
+  });
+
+  it('falls back to Private Cloud for a source (PDF) send — no blob to clean up', async () => {
+    h.port.uploadResult = err({ kind: 'protocol', message: 'cloud endpoint changed' });
+    const pcPort = new FakeDeliveryPort();
+    pcPort.uploadResult = ok({ fileName: 'paper.pdf', innerName: 'inner' });
+    h.deps.fallback = { privatePort: () => pcPort, offer: () => Promise.resolve(true) };
+
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const result = await sendDocument(
+      h.deps,
+      req({ format: 'pdf', source: { bytes, contentType: 'application/pdf', title: 'paper' } }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(pcPort.uploadCalls).toHaveLength(1);
+    expect(pcPort.uploadCalls[0]!.bytes).toBe(bytes);
     expect(h.badge.current).toBe('idle');
   });
 

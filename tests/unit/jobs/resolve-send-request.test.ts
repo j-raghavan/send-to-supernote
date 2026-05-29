@@ -25,11 +25,9 @@ describe('resolveSendRequest (F6-FR1)', () => {
 
   it('applies one-off overrides (popup, F6-FR6)', () => {
     const req = resolveSendRequest(settings, page, {
-      mode: 'fullpage',
       format: 'epub',
       target: 'privatecloud',
     });
-    expect(req.mode).toBe('fullpage');
     expect(req.format).toBe('epub');
     expect(req.target).toBe('privatecloud');
   });

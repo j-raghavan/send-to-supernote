@@ -18,13 +18,13 @@ describe('SettingsStore (F6/F7)', () => {
   });
 
   it('round-trips each setting', async () => {
-    await settings.setDefaultMode('fullpage');
+    await settings.setDefaultMode('reader');
     await settings.setDefaultFormat('epub');
     await settings.setTarget('privatecloud');
     await settings.setCloudFolderId('folder-7');
     await settings.setConfirmFilename(true);
     expect(await settings.get()).toEqual({
-      defaultMode: 'fullpage',
+      defaultMode: 'reader',
       defaultFormat: 'epub',
       target: 'privatecloud',
       cloudFolderId: 'folder-7',
@@ -39,7 +39,7 @@ describe('SettingsStore (F6/F7)', () => {
     await kv.set(StorageKeys.confirmFilename, 'yes');
     const result = await settings.get();
     expect(result.defaultMode).toBe('reader');
-    expect(result.defaultFormat).toBe('pdf');
+    expect(result.defaultFormat).toBe('epub');
     expect(result.target).toBe('cloud');
     expect(result.confirmFilename).toBe(false);
   });

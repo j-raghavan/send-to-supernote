@@ -5,17 +5,13 @@
  */
 import type { RenderOptions } from '@domain/conversion';
 
-export type RenderRoute = 'epub' | 'pdf-rasterized' | 'pdf-html';
+export type RenderRoute = 'epub' | 'pdf-html';
 
 /**
  * Decide the render route:
- *  - EPUB  -> the jszip EPUB builder/renderer;
- *  - PDF + rasterize (Full Page) -> html2canvas -> paginated PDF;
- *  - PDF (Reader) -> jsPDF .html() layout.
+ *  - EPUB -> the jszip EPUB builder/renderer;
+ *  - PDF  -> jsPDF .html() layout of the captured HTML.
  */
 export function renderRoute(options: RenderOptions): RenderRoute {
-  if (options.format === 'epub') {
-    return 'epub';
-  }
-  return options.rasterize ? 'pdf-rasterized' : 'pdf-html';
+  return options.format === 'epub' ? 'epub' : 'pdf-html';
 }

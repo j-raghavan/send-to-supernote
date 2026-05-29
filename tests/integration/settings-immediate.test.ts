@@ -20,17 +20,17 @@ describe('settings take effect immediately (F7-FR4)', () => {
     store = new SettingsStore(kv);
   });
 
-  it('a changed default mode is used by the next resolved send request', async () => {
-    // First send uses the default (reader).
+  it('a changed default format is used by the next resolved send request', async () => {
+    // First send uses the default (EPUB).
     const before = resolveSendRequest(await store.get(), { hostname: 'x.com' });
-    expect(before.mode).toBe('reader');
+    expect(before.format).toBe('epub');
 
     // Options changes the default; no reload happens.
-    await store.setDefaultMode('fullpage');
+    await store.setDefaultFormat('pdf');
 
     // The very next send (fresh get) reflects the change.
     const after = resolveSendRequest(await store.get(), { hostname: 'x.com' });
-    expect(after.mode).toBe('fullpage');
+    expect(after.format).toBe('pdf');
   });
 
   it('a changed target + folder is used by the next send without reload', async () => {

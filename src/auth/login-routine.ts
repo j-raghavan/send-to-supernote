@@ -7,7 +7,7 @@
  * `timestamp` from the nonce step is echoed back on login to avoid clock-skew
  * failures (spec Edge Cases).
  */
-import type { HttpClient, RandomSource } from '@shared/ports';
+import type { HttpClient } from '@shared/ports';
 import { err, ok, type Result } from '@shared/result';
 import {
   type ApiProfile,
@@ -19,6 +19,7 @@ import {
 import {
   type CountryCode,
   DEFAULT_COUNTRY_CODE,
+  DEFAULT_EQUIPMENT,
   loginHash,
   type Sha256Hex,
   type Token,
@@ -29,23 +30,42 @@ export const LOGIN_PATH = '/official/user/account/login/new';
 
 export type LoginErrorKind = 'auth-failed' | 'unexpected-response';
 
+/** Which request in the nonce → login sequence produced the failure. */
+export type LoginStep = 'nonce' | 'login';
+
 export interface LoginError {
   kind: LoginErrorKind;
   /** Application error code from the envelope (e.g. E0401), when present. */
   errorCode?: string;
   message: string;
+  /** Which step failed — surfaced in the popup status readout for diagnosis. */
+  step?: LoginStep;
+  /** Transport status of the failing request (0 when no response was received). */
+  httpStatus?: number;
+}
+
+/**
+ * One-line, password-free diagnostic for the sign-in status readout, e.g.
+ * `login · HTTP 403 · E0401 · auth-failed`. Pure and reused by the SW.
+ */
+export function formatLoginError(error: LoginError): string {
+  const parts: string[] = [];
+  if (error.step !== undefined) parts.push(error.step);
+  if (error.httpStatus !== undefined) parts.push(`HTTP ${error.httpStatus}`);
+  if (error.errorCode !== undefined) parts.push(error.errorCode);
+  parts.push(error.kind);
+  return parts.join(' · ');
 }
 
 export interface LoginSuccess {
   token: Token;
-  /** The equipment id generated for this login (persisted by the caller, not PII). */
+  /** The equipment id used for this login (persisted by the caller, not PII). */
   equipment: string;
 }
 
 export interface LoginDeps {
   http: HttpClient;
   sha256hex: Sha256Hex;
-  random: RandomSource;
 }
 
 export interface LoginParams {
@@ -53,7 +73,7 @@ export interface LoginParams {
   account: string;
   password: string;
   countryCode?: CountryCode;
-  /** Reuse an existing equipment id (stable client id); generated if absent. */
+  /** Reuse an existing equipment id (stable client id); defaults to DEFAULT_EQUIPMENT. */
   equipment?: string;
 }
 
@@ -70,9 +90,9 @@ export async function performLogin(
   deps: LoginDeps,
   params: LoginParams,
 ): Promise<Result<LoginSuccess, LoginError>> {
-  const { http, sha256hex, random } = deps;
+  const { http, sha256hex } = deps;
   const countryCode = params.countryCode ?? DEFAULT_COUNTRY_CODE;
-  const equipment = params.equipment ?? random.uuid();
+  const equipment = params.equipment ?? DEFAULT_EQUIPMENT;
 
   // 1. Nonce.
   const nonceRes = await http.request({
@@ -84,7 +104,7 @@ export async function performLogin(
   const nonceEnv = normalizeEnvelope(nonceRes.json);
   const nonce = nonceEnv.payload as NoncePayload;
   if (!nonceEnv.success || typeof nonce.randomCode !== 'string') {
-    return err(toError(nonceRes.status, nonceEnv, 'nonce request failed'));
+    return err(toError(nonceRes.status, nonceEnv, 'nonce request failed', 'nonce'));
   }
   const randomCode = nonce.randomCode;
   const timestamp = typeof nonce.timestamp === 'number' ? nonce.timestamp : undefined;
@@ -101,9 +121,8 @@ export async function performLogin(
       countryCode,
       account: params.account,
       password: hashed,
-      browser: 'Chrome',
+      browser: 'Chrome107',
       equipment,
-      equipmentNo: equipment,
       loginMethod: '1',
       ...(timestamp !== undefined ? { timestamp } : {}),
       language: 'en',
@@ -121,6 +140,8 @@ export async function performLogin(
       kind,
       ...(loginEnv.errorCode !== undefined ? { errorCode: loginEnv.errorCode } : {}),
       message: loginEnv.errorMsg ?? 'login failed',
+      step: 'login',
+      httpStatus: loginRes.status,
     });
   }
 
@@ -141,10 +162,17 @@ function buildHeaders(profile: ApiProfile): Record<string, string> {
   return headers;
 }
 
-function toError(httpStatus: number, env: NormalizedEnvelope, fallback: string): LoginError {
+function toError(
+  httpStatus: number,
+  env: NormalizedEnvelope,
+  fallback: string,
+  step: LoginStep,
+): LoginError {
   return {
     kind: isAuthFailure(httpStatus, env) ? 'auth-failed' : 'unexpected-response',
     ...(env.errorCode !== undefined ? { errorCode: env.errorCode } : {}),
     message: env.errorMsg ?? fallback,
+    step,
+    httpStatus,
   };
 }

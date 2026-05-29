@@ -27,6 +27,57 @@ export const DEFAULT_COUNTRY_CODE: CountryCode = '1';
 export type Token = string;
 
 /**
+ * Equipment (client device) id sent on login. The reverse-engineered reference
+ * client (bwhitman/supernote-cloud-python) sends the constant `"1"`, which the
+ * server records as a recognized device. A per-login random value breaks two
+ * ways: the server cannot deserialize a UUID (HTTP 200 `success:false` +
+ * `errorCode:"422"` "Request Parameter Serialisation Exception"), and any
+ * never-seen value reads as a NEW device, triggering the `E1760` "verify your
+ * identity" challenge. A stable constant avoids both — it is a fixed label, not
+ * a unique or identifying id.
+ */
+export const DEFAULT_EQUIPMENT = '1';
+
+/** Claims we read from the Supernote `x-access-token` JWT (others ignored). */
+export interface AccessTokenClaims {
+  /** Expiry, in seconds since the epoch. */
+  exp?: number;
+  /** Numeric account id (not the email). */
+  userId?: string;
+  /** Issuing device label (e.g. "WEB"). */
+  equipmentNo?: string;
+}
+
+/**
+ * Decode (NOT verify) the payload of a Supernote `x-access-token` JWT. Used only
+ * to read non-sensitive claims (`exp`, `userId`) so the connect flow can reject
+ * an already-expired token; the signature is the server's concern. Returns
+ * undefined for anything that is not a well-formed JWT payload.
+ */
+export function decodeAccessToken(token: string): AccessTokenClaims | undefined {
+  const segment = token.split('.')[1];
+  if (segment === undefined || segment.length === 0) {
+    return undefined;
+  }
+  try {
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    const parsed: unknown = JSON.parse(json);
+    if (typeof parsed !== 'object' || parsed === null) {
+      return undefined;
+    }
+    const claims = parsed as Record<string, unknown>;
+    return {
+      ...(typeof claims.exp === 'number' ? { exp: claims.exp } : {}),
+      ...(typeof claims.userId === 'string' ? { userId: claims.userId } : {}),
+      ...(typeof claims.equipmentNo === 'string' ? { equipmentNo: claims.equipmentNo } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Compute the Supernote login password hash: lowercase hex
  * `sha256(md5(password) + randomCode)`. The `password` argument is used only to
  * derive the hash and is never retained by this function (F2-FR2).
