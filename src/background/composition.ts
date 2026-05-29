@@ -45,6 +45,9 @@ import { ChromeOptionsOpener } from './options-opener';
 import { ChromeCookieReader } from './cookie-reader';
 import { ChromeTabController } from './tab-controller';
 import { SystemClock } from './clock';
+import { DirectRenderer } from './direct-renderer';
+import { DirectReaderParser } from './direct-reader-parser';
+import { registerOriginStripper } from './origin-stripper.firefox';
 import type { ReaderParser } from './reader-parser';
 
 export const http = new FetchHttpClient();
@@ -62,22 +65,39 @@ export const tabs = new ChromeTabController();
 export const queue = new JobQueue(store, clock);
 export const history = new JobHistory(store, clock);
 
-// The single shared offscreen manager (Chrome's DOM-less SW renders via an
-// offscreen document). Constructed lazily and memoized so one instance serves
-// both the renderer and the reader-parser for the SW lifetime.
+// Offscreen is Chrome-only. Constructed lazily, referenced ONLY inside the
+// `__TARGET__ === 'chrome'` branches below — on Firefox `__TARGET__` is the
+// literal 'firefox', so Rollup drops these branches and tree-shakes the
+// offscreen classes out of the Firefox bundle (I-F2 / FF2-FR6).
 let offscreenMgr: OffscreenManager | undefined;
 function ensureOffscreen(): OffscreenManager {
   return (offscreenMgr ??= new OffscreenManager(new ChromeOffscreenHost()));
 }
 
-/** The render adapter (Chrome offscreen document). */
+/** Select the render adapter for the build target (FF4-FR2). */
 function makeRenderer(): Renderer {
-  return new OffscreenRenderer(ensureOffscreen());
+  return __TARGET__ === 'firefox'
+    ? new DirectRenderer(blobs)
+    : new OffscreenRenderer(ensureOffscreen());
 }
 
-/** The reader-parse adapter (Chrome offscreen document). */
+/** Select the reader-parse adapter for the build target (FF4-FR2). */
 function makeReaderParser(): ReaderParser {
-  return new OffscreenReaderExtractor(ensureOffscreen());
+  return __TARGET__ === 'firefox'
+    ? new DirectReaderParser()
+    : new OffscreenReaderExtractor(ensureOffscreen());
+}
+
+/**
+ * Register the Firefox-only origin-strip webRequest fallback (FF4-FR2). No-op on
+ * Chrome or when the `__USE_WEBREQUEST__` build constant is false (DNR is the
+ * default on both targets — FF5). The literal branch tree-shakes the listener
+ * out of the Chrome bundle.
+ */
+export function registerOriginStrip(): void {
+  if (__TARGET__ === 'firefox' && __USE_WEBREQUEST__) {
+    registerOriginStripper();
+  }
 }
 
 export interface SendContext {

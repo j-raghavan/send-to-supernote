@@ -15,6 +15,14 @@ const alias = {
 };
 
 export default defineConfig({
+  // Build-time target constants (FF4-FR2). Minimal Chrome defaults so the Chrome
+  // build resolves `__TARGET__`/`__USE_WEBREQUEST__` to literals (enables dead-
+  // branch elimination / tree-shaking). FF6 generalizes these to be mode-driven
+  // (chrome vs firefox) — see src/global.d.ts.
+  define: {
+    __TARGET__: JSON.stringify('chrome'),
+    __USE_WEBREQUEST__: 'false',
+  },
   resolve: { alias },
   plugins: [
     webExtension({

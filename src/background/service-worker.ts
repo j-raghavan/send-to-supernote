@@ -39,6 +39,7 @@ import {
   buildDeps,
   deliveryFactory,
   clearExpiredFlag,
+  registerOriginStrip,
 } from './composition';
 
 async function runSend(
@@ -342,6 +343,10 @@ async function finalizePendingConnectForTab(tabId: number): Promise<void> {
     await onCloudCookieSet();
   }
 }
+
+// Firefox-only origin-strip webRequest fallback (FF4-FR2). No-op on Chrome and
+// when __USE_WEBREQUEST__ is false; the literal-target branch tree-shakes it out.
+registerOriginStrip();
 
 api.runtime.onInstalled.addListener(() => {
   registerContextMenus();
