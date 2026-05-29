@@ -1,0 +1,172 @@
+name: Release
+
+# Fires on EITHER a pushed SemVer tag OR a published GitHub Release (plus manual
+# dispatch). The manifest version is sourced from package.json, so the clean
+# flow is:
+#   npm version <patch|minor|major>   # bumps package.json + commits + tags vX.Y.Z
+#   git push --follow-tags            # -> this workflow builds + publishes
+# Or: publish a Release in the GitHub UI for an existing vX.Y.Z tag.
+on:
+  push:
+    tags: ['v*.*.*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write # create/update the Release, upload assets, push CHANGELOG
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build, package, sign, and publish assets
+    runs-on: ubuntu-latest
+    env:
+      # Optional PEM RSA key (repo secret). When set, a signed CRX is produced
+      # for self-hosting/QA. The Chrome Web Store upload uses the ZIP, not the
+      # CRX. The key determines the extension ID — keep it stable and secret.
+      CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve and validate version (SemVer + Chrome constraints)
+        id: ver
+        run: |
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}"
+          TAG="${TAG#refs/tags/}"
+          VER="${TAG#v}"
+          PKG="$(jq -r '.version' package.json)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Release tag=$TAG  version=$VER  package.json=$PKG"
+          if [ "$VER" != "$PKG" ]; then
+            echo "::error::Tag version ($VER) != package.json version ($PKG). Bump with 'npm version <patch|minor|major>' (it also tags), then 'git push --follow-tags'."
+            exit 1
+          fi
+          if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Chrome manifest versions must be numeric MAJOR.MINOR.PATCH (got '$VER'); SemVer pre-release/build suffixes are not allowed for store builds."
+            exit 1
+          fi
+
+      - name: Quality gate (lint, format, typecheck, coverage >=97%)
+        run: npm run check
+
+      - name: Build + zip
+        run: npm run package
+
+      - name: Verify built manifest version and version the ZIP
+        run: |
+          DIST_VER="$(jq -r '.version' dist/manifest.json)"
+          if [ "$DIST_VER" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::dist/manifest.json version ($DIST_VER) != release version (${{ steps.ver.outputs.version }})"
+            exit 1
+          fi
+          cp artifacts/send-to-supernote.zip "artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip"
+
+      - name: Build signed CRX (only when CRX_PRIVATE_KEY is configured)
+        if: env.CRX_PRIVATE_KEY != ''
+        env:
+          CRX_OUT: artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+        run: npm run crx
+
+      - name: Upload workflow-run artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: send-to-supernote-${{ steps.ver.outputs.version }}
+          path: |
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+          if-no-files-found: warn
+
+      - name: Publish / update the GitHub Release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: v${{ steps.ver.outputs.version }}
+          # Only auto-generate notes when WE create the release (tag push /
+          # dispatch); on a user-published Release, keep their notes intact.
+          generate_release_notes: ${{ github.event_name != 'release' }}
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
+            artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+
+  changelog:
+    name: Enrich release notes and update CHANGELOG
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout default branch (full history for git log)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Enrich release notes (assets + contributors)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          LAST_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..$TAG"; else RANGE="$TAG"; fi
+          CONTRIBUTORS="$(git log "$RANGE" --format='%an' | sort -u | paste -sd ', ' - || true)"
+          CURRENT="$(gh release view "$TAG" --json body --jq '.body' 2>/dev/null || true)"
+          NOTES="$(printf '%s\n\n## 📦 Chrome Extension assets\n- `send-to-supernote-%s.zip` — unpacked load / Chrome Web Store upload\n- `send-to-supernote-%s.crx` — signed CRX for self-hosting (present only when a signing key is configured)\n\n## 👥 Contributors\n%s\n' "$CURRENT" "$VERSION" "$VERSION" "${CONTRIBUTORS:-—}")"
+          gh release edit "$TAG" --notes "$NOTES"
+
+      - name: Update CHANGELOG.md and commit to the default branch
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          LAST_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$LAST_TAG" ]; then RANGE="$LAST_TAG..$TAG"; else RANGE="$TAG"; fi
+          CHANGES="$(git log "$RANGE" --pretty=format:'- %s (%h)' || true)"
+          [ -n "$CHANGES" ] || CHANGES="- (no commits since previous tag)"
+          DATE="$(date +%Y-%m-%d)"
+          if [ ! -f CHANGELOG.md ]; then
+            printf '# Changelog\n\nAll notable changes to this project are documented in this file.\n\n' > CHANGELOG.md
+          fi
+          TMP="$(mktemp)"
+          {
+            head -n 4 CHANGELOG.md
+            printf '## [%s] - %s\n\n%s\n\n' "$TAG" "$DATE" "$CHANGES"
+            tail -n +5 CHANGELOG.md
+          } > "$TMP"
+          mv "$TMP" CHANGELOG.md
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "No CHANGELOG changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "docs: update CHANGELOG.md for ${TAG}"
+            # Requires the default branch to allow pushes from GITHUB_TOKEN
+            # (no branch protection blocking it). If protected, this step will
+            # fail — switch it to open a PR instead.
+            git push origin "HEAD:${{ github.event.repository.default_branch }}"
+          fi

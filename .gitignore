@@ -1,0 +1,18 @@
+
+# Spec files
+spec/*
+
+# Claude
+.claude-flow/
+.mcp.json
+CLAUDE.md
+.claude/
+
+# Build & test artifacts
+node_modules/
+dist/
+artifacts/
+coverage/
+.swarm/
+ruvector.db
+*.log

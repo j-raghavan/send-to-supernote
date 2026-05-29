@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Send to Supernote — Settings</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <img id="logo" class="hero__logo" alt="Send to Supernote" />
+        <div>
+          <h1 class="hero__title">Send to Supernote</h1>
+          <p class="hero__tagline">
+            Capture any page — or pass a PDF straight through — to your Supernote.
+          </p>
+        </div>
+      </header>
+
+      <!-- Destination: Supernote Cloud OR Private Cloud (mutually exclusive). -->
+      <div class="seg" role="tablist">
+        <button id="seg-cloud" class="seg__btn is-active" type="button">Supernote Cloud</button>
+        <button id="seg-private" class="seg__btn" type="button">Private Cloud</button>
+      </div>
+
+      <!-- Supernote Cloud panel -->
+      <div id="cloud-panel">
+        <section id="connection" class="card">
+          <div class="card__head">
+            <h2>Supernote Cloud</h2>
+            <span id="connection-status" class="card__hint">Loading…</span>
+          </div>
+
+          <div id="cloud-connected" class="account" hidden>
+            <span class="account__chip"
+              ><span class="dot"></span><span id="account-chip">Connected</span></span
+            >
+            <button id="disconnect" class="link link--muted" type="button">Sign out</button>
+          </div>
+
+          <div id="cloud-disconnected" class="stack" hidden>
+            <p class="muted">
+              Sign in on Supernote's own page (it handles the captcha and any verification code).
+              The extension connects automatically and never sees your password.
+            </p>
+            <div>
+              <button id="connect-cloud" class="btn btn--primary" type="button">
+                Connect Supernote Cloud
+              </button>
+            </div>
+            <p id="connect-cloud-hint" class="muted" hidden></p>
+          </div>
+        </section>
+
+        <section id="folder" class="card">
+          <div class="card__head">
+            <h2>Destination folder</h2>
+            <span class="card__hint">Defaults to <strong>Document/</strong></span>
+          </div>
+          <ul id="folder-list" class="folders"></ul>
+        </section>
+      </div>
+
+      <!-- Private Cloud panel -->
+      <div id="private-panel" hidden>
+        <section id="privatecloud-section" class="card">
+          <div class="card__head">
+            <h2>Private Cloud</h2>
+            <span id="pc-connection-status" class="card__hint">Not connected</span>
+          </div>
+          <div class="stack">
+            <input
+              id="pc-base-url"
+              class="input"
+              type="url"
+              placeholder="https://supernote.home.lan"
+            />
+            <div class="row">
+              <input
+                id="pc-email"
+                class="input"
+                type="email"
+                placeholder="Account email"
+                autocomplete="username"
+              />
+              <input
+                id="pc-password"
+                class="input"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+              />
+            </div>
+            <p id="password-note" class="muted"></p>
+            <p id="pc-http-warning" class="warning" hidden></p>
+            <div class="row">
+              <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
+              <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
+            </div>
+            <p class="muted">Sends go to your <strong>Document/</strong> folder.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Capture defaults -->
+      <section id="defaults" class="card">
+        <div class="card__head"><h2>Defaults</h2></div>
+        <div class="stack">
+          <div class="field">
+            <span class="field__label">Format</span>
+            <select id="default-format" class="select">
+              <option value="epub">EPUB — reflowable, best for reading</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Before you start -->
+      <section id="onboarding" class="card">
+        <div class="card__head"><h2>Before you start</h2></div>
+        <p id="onboarding-copy" class="muted"></p>
+      </section>
+
+      <footer class="ftr">
+        <p id="no-sharing" class="muted"></p>
+        <a id="privacy-link" class="link link--muted" href="#" target="_blank" rel="noopener"
+          >Privacy Policy</a
+        >
+      </footer>
+    </main>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>

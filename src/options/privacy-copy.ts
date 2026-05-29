@@ -1,0 +1,39 @@
+/**
+ * Privacy copy (F7-FR5 / F10-FR1) — covered, pure.
+ *
+ * The Options page shows a visible Privacy Policy link and a one-line statement
+ * that the password is never stored (only a local token). Centralized here so
+ * the copy is testable and consistent with the privacy story (D-2/D-3).
+ */
+
+/**
+ * Public Privacy Policy URL for the Web Store listing (F10-FR1): the policy text
+ * rendered on GitHub. Requires `docs/PRIVACY.md` to be on the default branch
+ * (`master`) — merge before submitting. The bundled `src/privacy/privacy.html`
+ * is what the popup/Options "Privacy" links open for offline viewing.
+ */
+export const PRIVACY_POLICY_URL =
+  'https://github.com/j-raghavan/send-to-supernote/blob/master/docs/PRIVACY.md';
+
+/**
+ * Path to the privacy page bundled INSIDE the extension. The popup/Options
+ * "Privacy" links open this via `chrome.runtime.getURL` so it always works
+ * offline (the hosted URL above is a deferred Web Store deploy step).
+ */
+export const PRIVACY_PAGE_PATH = 'src/privacy/privacy.html';
+
+/** The one-line "password never stored" assurance (F7-FR5 / D-2). */
+export const PASSWORD_NEVER_STORED =
+  'Your password is never stored — only a session token is saved locally on this device.';
+
+/** Short data-flow assurance (no third party, client-only — D-3). */
+export const NO_THIRD_PARTY =
+  'Your page content goes only to your chosen Supernote target — never to any third party or a server we run.';
+
+/**
+ * The positive no-third-party-sharing / no-OAuth story (F10-FR6). Dropbox/Drive
+ * were dropped (D-4), so the extension uses no third-party OAuth and shares data
+ * with no third party at all.
+ */
+export const NO_THIRD_PARTY_SHARING =
+  'This extension uses no third-party sign-in (no OAuth) and shares your data with no third party.';
