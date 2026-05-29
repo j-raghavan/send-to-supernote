@@ -12,12 +12,12 @@
 /* c8 ignore start */
 import type { Extractor } from '@shared/ports';
 import type { ReaderExtract } from '@domain/capture';
-import type { OffscreenReaderExtractor } from './offscreen-reader';
+import type { ReaderParser } from './reader-parser';
 
 export class ScriptingExtractor implements Extractor {
   constructor(
     private readonly tabId: number,
-    private readonly reader: OffscreenReaderExtractor,
+    private readonly reader: ReaderParser,
   ) {}
 
   async extractReader(): Promise<ReaderExtract> {

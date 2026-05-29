@@ -9,6 +9,7 @@
  */
 /* c8 ignore start */
 import type { ReaderExtract } from '@domain/capture';
+import type { ReaderParser } from './reader-parser';
 import type { OffscreenManager } from './offscreen-manager';
 
 export interface ReaderExtractMessage {
@@ -18,7 +19,7 @@ export interface ReaderExtractMessage {
   url: string;
 }
 
-export class OffscreenReaderExtractor {
+export class OffscreenReaderExtractor implements ReaderParser {
   constructor(private readonly manager: OffscreenManager) {}
 
   async extract(html: string, url: string): Promise<ReaderExtract> {
