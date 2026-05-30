@@ -11,6 +11,7 @@
  */
 import type { ReaderExtract } from '@domain/capture';
 import type { RenderOptions } from '@domain/conversion';
+import type { StitchGeometry, TileRef } from '@conversion/fullpage-stitch-core';
 
 /** Reasons the offscreen document may be created (subset we use). */
 export type OffscreenReason = 'DOM_PARSER' | 'BLOBS' | 'IFRAME_SCRIPTING';
@@ -177,6 +178,32 @@ export interface RenderedBlob {
  */
 export interface Renderer {
   render(html: string, options: RenderOptions): Promise<RenderedBlob>;
+}
+
+/**
+ * Viewport screenshot of the active tab (FP3-FR1), gated by `activeTab` (granted
+ * by the send click — no broad host permission). The real adapter wraps
+ * `api.tabs.get(tabId).windowId` + `api.tabs.captureVisibleTab(windowId,
+ * { format: 'png' })` with no branching; the scroll/throttle/retry policy lives
+ * in the `captureFullPage` orchestrator so it is testable. Tests inject a fake
+ * returning a scripted window id and canned PNG bytes per call.
+ */
+export interface CapturePort {
+  /** Resolve the tab's window id via `api.tabs.get(tabId).windowId` (FP3-FR1). */
+  windowIdOf(tabId: number): Promise<number>;
+  /** Capture the visible viewport of `windowId` as PNG bytes (FP3-FR1). */
+  captureViewport(windowId: number): Promise<Uint8Array>;
+}
+
+/**
+ * Stitch + paginate captured tiles into a rendered blob (FP4-FR2/FR4). Target-
+ * gated like the render path: an offscreen-document dispatch on Chrome vs a
+ * `DirectStitcher` on Firefox, both delegating to the chrome-free
+ * `stitchFullPageToPdf` core. Returns a `RenderedBlob` handle (FP3-FR4), never
+ * inline bytes over `runtime.sendMessage`.
+ */
+export interface Stitcher {
+  stitch(tiles: TileRef[], geometry: StitchGeometry): Promise<RenderedBlob>;
 }
 
 /**
