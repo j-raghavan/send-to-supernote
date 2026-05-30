@@ -46,8 +46,19 @@ function tx<T>(
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, mode);
     const request = run(transaction.objectStore(STORE));
-    request.onsuccess = (): void => resolve(request.result);
+    // Resolve only when the TRANSACTION COMMITS (`oncomplete`), not merely when
+    // the request succeeds (`onsuccess`). `onsuccess` fires before the write is
+    // durable, so a writer could hand back a handle while the commit is still
+    // pending — and the offscreen document that wrote it is closed immediately
+    // after render (OffscreenRenderer.release()). If that teardown raced ahead of
+    // the commit, the bytes were lost and the service worker's get() returned
+    // undefined → "Rendered blob missing". Committing first removes the race.
     request.onerror = (): void => reject(request.error ?? new Error('indexedDB request failed'));
+    transaction.oncomplete = (): void => resolve(request.result);
+    transaction.onabort = (): void =>
+      reject(transaction.error ?? new Error('indexedDB transaction aborted'));
+    transaction.onerror = (): void =>
+      reject(transaction.error ?? new Error('indexedDB transaction failed'));
   });
 }
 
