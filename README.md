@@ -17,10 +17,19 @@ service).
   **EPUB** (or a paginated **PDF**). If a page isn't a clean article, it falls
   back to the page body (scripts/styles stripped) so you still get a document
   rather than an empty one.
+- **Full Page** — right-click → _Send to Supernote (Full Page)_ captures the page
+  **as it looks**: it scrolls top-to-bottom, screenshots each viewport, and
+  stitches them into an image-based **PDF** (true visual fidelity, vs Reader's
+  reflow). Known limits: fixed/sticky banners are shown **once** (not repeated on
+  every screen), very tall pages are **capped** (~50 pages) with a notice, and the
+  PDF is a screenshot — its text is **not selectable**. Use Reader when you want
+  searchable text.
 - **PDF pass-through** — a page that is _already_ a PDF (e.g. an arXiv paper in
-  the browser's PDF viewer) is uploaded **as-is**, with no capture or conversion.
+  the browser's PDF viewer) is uploaded **as-is**, with no capture or conversion
+  (this takes priority — a PDF tab pass-throughs even if you pick Full Page).
 
-One toolbar/right-click action handles both — there is no mode to choose.
+The toolbar button sends with your default mode (Reader); the right-click menu
+lets you choose **Reader** or **Full Page** per send.
 
 ## Delivery targets
 
