@@ -43,21 +43,33 @@ interface DrawCall {
   args: unknown[];
 }
 
+/** Minimal 2D-context shape the stitcher uses: composite draws + the white fill. */
+type CtxLike = {
+  drawImage: (...a: unknown[]) => void;
+  fillRect: (...a: unknown[]) => void;
+  fillStyle?: string;
+};
+
+/** Records the `convertToBlob` MIME options so we can assert JPEG encoding. */
+const convertToBlobCalls: { type?: string; quality?: number }[] = [];
+
 /**
  * Install OffscreenCanvas/createImageBitmap stubs. `ctxFactory` lets a test
  * return `null` (to hit the `!ctx` throw) or a recorder ctx. `bitmapDims`
  * controls the decoded bitmap size so the clip path can be exercised.
  */
 function installCanvasStubs(opts: {
-  ctxFactory?: () => { drawImage: (...a: unknown[]) => void } | null;
+  ctxFactory?: () => CtxLike | null;
   bitmapDims?: { width: number; height: number };
   drawCalls?: DrawCall[];
 }): { close: ReturnType<typeof vi.fn> } {
   const drawCalls = opts.drawCalls ?? [];
-  const defaultCtx = (): { drawImage: (...a: unknown[]) => void } => ({
+  const defaultCtx = (): CtxLike => ({
     drawImage: (...args: unknown[]): void => {
       drawCalls.push({ args });
     },
+    fillRect: (): void => {},
+    fillStyle: '',
   });
   const close = vi.fn();
 
@@ -66,12 +78,14 @@ function installCanvasStubs(opts: {
       public width: number,
       public height: number,
     ) {}
-    getContext(_type: string): { drawImage: (...a: unknown[]) => void } | null {
+    getContext(_type: string): CtxLike | null {
       return opts.ctxFactory ? opts.ctxFactory() : defaultCtx();
     }
-    convertToBlob(): Promise<Blob> {
+    convertToBlob(options?: { type?: string; quality?: number }): Promise<Blob> {
+      convertToBlobCalls.push(options ?? {});
       // A Blob whose arrayBuffer() resolves a couple of bytes for blobToDataUrl.
       return Promise.resolve({
+        type: options?.type ?? '',
         arrayBuffer: () => Promise.resolve(new Uint8Array([0x41, 0x42]).buffer),
       } as unknown as Blob);
     }
@@ -105,6 +119,7 @@ function geom(over: Partial<StitchGeometry>): StitchGeometry {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  convertToBlobCalls.length = 0;
 });
 
 describe('stitchFullPageToPdf — paginate contract (FP4-FR2 + FP5-FR1)', () => {
@@ -114,17 +129,21 @@ describe('stitchFullPageToPdf — paginate contract (FP4-FR2 + FP5-FR1)', () => 
     jsPDFCtor.mockClear();
   });
 
-  it('adds one image per page slice and (slices-1) pages; returns a Uint8Array', async () => {
+  it('adds one JPEG image per page slice and (slices-1) pages; returns a Uint8Array', async () => {
     installCanvasStubs({});
-    // a4 dpr=1, totalHeight=5000 → 2 page slices ([0,3508],[3508,1492]).
+    // a4 width 800 dpr 1: band=1131, totalHeight=5000 → tile(5000,1131) = 5 slices.
     const tiles: TileRef[] = [{ handle: 'h0', offsetY: 0 }];
     const out = await stitchFullPageToPdf(tiles, geom({}), resolveBytes);
 
     expect(out).toBeInstanceOf(Uint8Array);
-    expect(addImage).toHaveBeenCalledTimes(2); // one per slice
-    expect(addPage).toHaveBeenCalledTimes(1); // slices - 1
-    // jsPDF constructed with the a4 format.
+    expect(addImage).toHaveBeenCalledTimes(5); // one per slice
+    expect(addPage).toHaveBeenCalledTimes(4); // slices - 1
+    // jsPDF constructed with the a4 format (real A4 page; band aspect matches it).
     expect(jsPDFCtor).toHaveBeenCalledWith({ unit: 'pt', format: 'a4' });
+    // Bands are JPEG-encoded (size fix), not PNG: addImage format + convertToBlob MIME.
+    expect(addImage.mock.calls[0]![1]).toBe('JPEG');
+    expect(convertToBlobCalls.every((c) => c.type === 'image/jpeg')).toBe(true);
+    expect(convertToBlobCalls[0]!.quality).toBe(0.85);
   });
 
   it('routes letter through jsPDF with the letter format and single-slice page', async () => {
@@ -141,18 +160,26 @@ describe('stitchFullPageToPdf — paginate contract (FP4-FR2 + FP5-FR1)', () => 
     expect(jsPDFCtor).toHaveBeenCalledWith({ unit: 'pt', format: 'letter' });
   });
 
-  it('clamps the per-page render height to the page height (renderHeightPt cap)', async () => {
+  it('renders a full slice at the page height and the remainder shorter (no vertical squish)', async () => {
     installCanvasStubs({});
-    // width=1, dpr=1 → widthPx=1, so renderHeightPt = slice.height/1 * pageWidthPt
-    // is huge and must be clamped to pageHeightPt (841.89) for every page.
+    // a4 width 800 dpr 1: band=1131; totalHeight=1500 → slices [0,1131],[1131,369].
+    // A full band has the page's aspect, so it maps on at ≈ pageHeightPt with NO
+    // compression; the remainder slice is proportionally shorter (top-aligned).
     await stitchFullPageToPdf(
       [{ handle: 'h0', offsetY: 0 }],
-      geom({ width: 1, totalHeight: 1000 }),
+      geom({ width: 800, totalHeight: 1500 }),
       resolveBytes,
     );
-    // 5th positional arg of addImage is the height; expect it clamped to 841.89.
-    const heightArg = addImage.mock.calls[0]![5] as number;
-    expect(heightArg).toBe(841.89);
+    const pageWidthPt = 595.28;
+    const widthPx = 800;
+    const fullH = addImage.mock.calls[0]![5] as number; // 5th positional arg = height
+    const remH = addImage.mock.calls[1]![5] as number;
+    // full slice: (1131/800)·595.28 ≈ 841.58, ≤ pageHeightPt(841.89) → not clamped.
+    expect(fullH).toBeCloseTo((1131 / widthPx) * pageWidthPt, 2);
+    expect(fullH).toBeLessThanOrEqual(841.89);
+    // remainder: (369/800)·595.28 ≈ 274.6, clearly shorter than a full page.
+    expect(remH).toBeCloseTo((369 / widthPx) * pageWidthPt, 2);
+    expect(remH).toBeLessThan(fullH);
   });
 });
 
@@ -269,7 +296,7 @@ describe('stitchFullPageToPdf — error branches', () => {
     installCanvasStubs({
       ctxFactory: () => {
         n += 1;
-        return n === 1 ? { drawImage: vi.fn() } : null;
+        return n === 1 ? { drawImage: vi.fn(), fillRect: vi.fn() } : null;
       },
     });
     await expect(

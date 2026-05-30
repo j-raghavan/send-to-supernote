@@ -42,20 +42,31 @@ export interface FullPageCap {
 }
 
 /**
- * ~50 A4 pages (3508 device px each — A4's 297 mm at a 300-dpi physical basis,
- * the same basis the page slices use below). Keeps a tall page canvas-safe and
- * the output file bounded.
+ * ~50 pages worth of canvas as an absolute memory/file guard. The page-count cap
+ * (`maxPages`) is the limit users actually hit; `maxHeightPx` only binds for
+ * unusually WIDE captures (where `50 · pageHeightPx` would exceed it), keeping a
+ * very tall canvas safe. `50 * 3508` is a deliberately round device-px ceiling.
  */
 export const DEFAULT_CAP: FullPageCap = { maxPages: 50, maxHeightPx: 50 * 3508 };
 
 /**
- * Page heights in device px at dpr = 1, on a 300-dpi physical basis
- * (A4 297 mm ≈ 3508 px, Letter 11 in ≈ 3300 px). The cap's `maxHeightPx`
- * (`50 * 3508`) is on this same basis, so `maxPages * pageHeightDevicePx`
- * stays internally consistent (documented in the deliverable). Actual device
- * slices scale this by the run's `dpr`.
+ * Portrait page aspect (height ÷ width): A4 is 297⁄210, Letter 11⁄8.5. The page
+ * band height is derived from the CAPTURE WIDTH times this ratio (see
+ * `planFullPage`), NOT a fixed 300-dpi height. That is the whole legibility fix:
+ * a width-proportional band has the SAME aspect as the PDF page, so it maps on
+ * with one uniform scale and zero vertical compression. The old fixed
+ * `PAGE_BASE_PX` basis (3508 px ≈ 2.7 viewports) crammed far too much height into
+ * each page and the `renderHeightPt` clamp then squashed it — the "tiny, squished
+ * fonts" bug. Width-proportional pages reproduce the desktop layout faithfully
+ * and read at native-ish size after the device's fit-to-width.
  */
-const PAGE_BASE_PX: Record<PageSize, number> = { a4: 3508, letter: 3300 };
+const PAGE_ASPECT: Record<PageSize, number> = { a4: 297 / 210, letter: 11 / 8.5 };
+
+/**
+ * JPEG quality for the page-band images — faithful fidelity at a fraction of
+ * PNG's size (the prior full-PNG path produced ~46 MB for a few pages).
+ */
+const JPEG_QUALITY = 0.85;
 
 export interface StitchGeometry extends PageGeometry {
   pageSize: PageSize;
@@ -104,7 +115,11 @@ function tile(total: number, chunk: number): { start: number; height: number }[]
  */
 export function planFullPage(g: StitchGeometry, cap: FullPageCap = DEFAULT_CAP): FullPagePlan {
   const dpr = g.dpr > 0 ? g.dpr : 1;
-  const pageHeightPx = Math.max(1, Math.round(PAGE_BASE_PX[g.pageSize] * dpr));
+  // Page band height is the CAPTURE WIDTH (device px) × the page's portrait
+  // aspect, so every band has the same aspect ratio as the PDF page and tiles on
+  // with no vertical compression (the legibility fix — see PAGE_ASPECT).
+  const widthDevicePx = Math.max(1, Math.round(Math.max(0, g.width) * dpr));
+  const pageHeightPx = Math.max(1, Math.round(widthDevicePx * PAGE_ASPECT[g.pageSize]));
 
   // CSS height → device px, then clamp to BOTH caps (height and page count).
   const rawDeviceHeight = Math.max(0, g.totalHeight) * dpr;
@@ -180,6 +195,10 @@ export async function stitchFullPageToPdf(
   if (!ctx) {
     throw new Error('fullpage-stitch: 2D canvas context unavailable');
   }
+  // Paint the canvas white first: JPEG has no alpha, so any region a tile does
+  // not cover (e.g. below a clipped final tile) would otherwise flatten to black.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, widthPx, plan.totalDeviceHeight);
 
   for (const tile of tiles) {
     const destY = Math.round(Math.max(0, tile.offsetY) * dpr);
@@ -222,21 +241,26 @@ export async function stitchFullPageToPdf(
       widthPx,
       slice.height,
     );
-    const sliceBlob = await sliceCanvas.convertToBlob({ type: 'image/png' });
+    const sliceBlob = await sliceCanvas.convertToBlob({
+      type: 'image/jpeg',
+      quality: JPEG_QUALITY,
+    });
     const dataUrl = await blobToDataUrl(sliceBlob);
 
     if (i > 0) {
       pdf.addPage();
     }
-    // Scale the band to the page width; keep aspect so bands tile the height.
+    // Band aspect == page aspect (page height is width-proportional), so a full
+    // slice maps on at exactly pageHeightPt; the final remainder slice is shorter.
+    // `Math.min` is a defensive clamp against rounding overshoot.
     const renderHeightPt = (slice.height / widthPx) * pageWidthPt;
-    pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidthPt, Math.min(renderHeightPt, pageHeightPt));
+    pdf.addImage(dataUrl, 'JPEG', 0, 0, pageWidthPt, Math.min(renderHeightPt, pageHeightPt));
   }
 
   return new Uint8Array(pdf.output('arraybuffer'));
 }
 
-/** Read a Blob's bytes as a base64 data URL for `jsPDF.addImage`. */
+/** Read a JPEG Blob's bytes as a base64 data URL for `jsPDF.addImage`. */
 async function blobToDataUrl(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -244,5 +268,6 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   for (let i = 0; i < bytes.length; i += 1) {
     binary += String.fromCharCode(bytes[i]!);
   }
-  return `data:image/png;base64,${btoa(binary)}`;
+  // Page bands are always JPEG-encoded (see the convertToBlob call above).
+  return `data:image/jpeg;base64,${btoa(binary)}`;
 }
