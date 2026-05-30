@@ -283,14 +283,21 @@ async function connectCloud(): Promise<void> {
     void render(); // already signed in — captured immediately
     return;
   }
+  if (result.pending) {
+    // The official login tab is now open and focused. Close the popup so the user
+    // signs in there; the background finishes the connect (captures the cookie,
+    // closes the tab, shows a "Connected to Supernote Cloud" notification). Keeping
+    // the popup open here just stranded the user on a "reopen once connected" note.
+    window.close();
+    return;
+  }
+  // Genuine failure to start sign-in — re-enable the button and surface the reason.
   if (button) {
     button.disabled = false;
     button.textContent = 'Connect Supernote Cloud';
   }
   if (statusEl) {
-    statusEl.textContent = result.pending
-      ? 'Finish signing in on the Supernote tab — reopen this popup once connected.'
-      : (result.reason ?? 'Could not start sign-in. Please try again.');
+    statusEl.textContent = result.reason ?? 'Could not start sign-in. Please try again.';
     statusEl.hidden = false;
   }
 }
