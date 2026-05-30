@@ -12,11 +12,13 @@
 /* c8 ignore start */
 import { renderToBytes, parseReader } from '@conversion/render-parse-core';
 import { contentTypeFor } from '@domain/conversion';
+import { DEFAULT_CAP, stitchFullPageToPdf } from '@conversion/fullpage-stitch-core';
 import type { ReaderExtract } from '@domain/capture';
 import type { RenderedBlob } from '@shared/ports';
 import { IndexedDbBlobTransfer } from '../background/blob-transfer';
 import type { RenderMessage } from '../background/offscreen-renderer';
 import type { ReaderExtractMessage } from '../background/offscreen-reader';
+import type { StitchMessage } from '../background/offscreen-stitcher';
 
 const blobs = new IndexedDbBlobTransfer();
 
@@ -25,6 +27,20 @@ async function handleRender(message: RenderMessage): Promise<RenderedBlob> {
   const contentType = contentTypeFor(message.options.format);
   const handle = await blobs.put(bytes, contentType);
   return { handle, contentType, size: bytes.byteLength };
+}
+
+async function handleStitch(message: StitchMessage): Promise<RenderedBlob> {
+  // Tiles arrive as handles (FP3-FR4) — resolve each through the offscreen
+  // IndexedDB blob transfer, stitch/paginate via the shared chrome-free core,
+  // then store the PDF and hand the SW back a handle (never inline bytes).
+  const bytes = await stitchFullPageToPdf(
+    message.tiles,
+    message.geometry,
+    async (handle) => (await blobs.get(handle))?.bytes,
+    DEFAULT_CAP,
+  );
+  const handle = await blobs.put(bytes, 'application/pdf');
+  return { handle, contentType: 'application/pdf', size: bytes.byteLength };
 }
 
 function handleExtractReader(message: ReaderExtractMessage): ReaderExtract {
@@ -42,6 +58,16 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       .catch((thrown: unknown) =>
         // Surface the real render error instead of swallowing it as a generic
         // "Could not render" — the SW logs whatever lands here.
+        sendResponse({ error: thrown instanceof Error ? thrown.message : String(thrown) }),
+      );
+    return true; // keep the message channel open for the async response
+  }
+  if (type === 'stitch') {
+    handleStitch(message as StitchMessage)
+      .then(sendResponse)
+      .catch((thrown: unknown) =>
+        // Surface the real stitch error instead of swallowing it — the SW logs
+        // whatever lands here (parity with the render arm above).
         sendResponse({ error: thrown instanceof Error ? thrown.message : String(thrown) }),
       );
     return true; // keep the message channel open for the async response
