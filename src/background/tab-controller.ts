@@ -5,16 +5,17 @@
  */
 /* c8 ignore start */
 import type { TabController } from '@shared/ports';
+import { api } from '@shared/browser-api';
 
 export class ChromeTabController implements TabController {
   async open(url: string): Promise<number | undefined> {
-    const tab = await chrome.tabs.create({ url });
+    const tab = await api.tabs.create({ url });
     return tab.id;
   }
 
   async close(tabId: number): Promise<void> {
     try {
-      await chrome.tabs.remove(tabId);
+      await api.tabs.remove(tabId);
     } catch {
       // Tab already closed by the user — nothing to do.
     }

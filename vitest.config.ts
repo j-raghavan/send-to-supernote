@@ -26,11 +26,11 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/**/index.ts',
         'src/background/service-worker.ts',
+        'src/background/composition.ts',
         'src/offscreen/offscreen.ts',
         'src/options/options.ts',
         'src/popup/popup.ts',
         'src/content/reader.ts',
-        'src/content/fullpage.ts',
       ],
       thresholds: {
         lines: 97,

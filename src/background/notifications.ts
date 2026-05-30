@@ -5,13 +5,14 @@
  */
 /* c8 ignore start */
 import type { Notification, Notifier } from '@shared/ports';
+import { api } from '@shared/browser-api';
 
 const ICON = 'icons/icon128.png';
 
 export class ChromeNotifier implements Notifier {
   notify(notification: Notification): Promise<void> {
     return new Promise((resolve) => {
-      chrome.notifications.create(
+      api.notifications.create(
         {
           type: 'basic',
           iconUrl: ICON,

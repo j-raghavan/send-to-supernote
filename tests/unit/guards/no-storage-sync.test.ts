@@ -26,20 +26,28 @@ const STORAGE_ADAPTER = fileURLToPath(
   new URL('../../../src/background/chrome-storage.ts', import.meta.url),
 );
 
-describe('I-5 no chrome.storage.sync guard (pulled forward from F10)', () => {
-  it('never references chrome.storage.sync anywhere in src (code, not comments)', () => {
+describe('I-5 no storage.sync guard (pulled forward from F10)', () => {
+  it('never references storage.sync anywhere in src — chrome.* or the api shim (code, not comments)', () => {
     const offenders: string[] = [];
     for (const file of tsFiles(SRC)) {
       const code = stripComments(readFileSync(file, 'utf8'));
-      if (/chrome\.storage\.sync|storage\.sync/.test(code)) {
+      // Generic `storage.sync` so the guard keeps its teeth post-shim: it now
+      // also forbids `api.storage.sync` (the shim could be misused that way),
+      // not just the literal `chrome.storage.sync`. Stays consistent with
+      // guard-robustness.test.ts's `hasStorageSync` predicate.
+      if (/(?:chrome|api)\.storage\.sync|storage\.sync/.test(code)) {
         offenders.push(file.replace(SRC, 'src'));
       }
     }
     expect(offenders).toEqual([]);
   });
 
-  it('the storage adapter uses chrome.storage.local', () => {
+  it('the storage adapter targets storage.local via the browser-api shim', () => {
     const code = stripComments(readFileSync(STORAGE_ADAPTER, 'utf8'));
-    expect(code).toContain('chrome.storage.local');
+    // Post-FF1 the adapter routes runtime storage through the `api` shim
+    // (`api.storage.local`), never bare `chrome.storage.local` at runtime. The
+    // I-5 invariant (local-only, never sync) is unchanged — only the namespace
+    // it goes through (the WebExtension shim) changed.
+    expect(code).toContain('api.storage.local');
   });
 });

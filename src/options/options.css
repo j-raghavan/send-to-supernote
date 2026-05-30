@@ -299,6 +299,20 @@ body {
   background: var(--soft);
 }
 
+/* The currently-selected destination folder — a filled accent pill so the user
+   can see at a glance where sends go (vs the outlined, unselected folders). */
+.folders li button.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.folders li button.is-selected:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 /* Footer */
 .ftr {
   display: flex;

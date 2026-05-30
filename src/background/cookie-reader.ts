@@ -5,10 +5,11 @@
  */
 /* c8 ignore start */
 import type { CookieReader } from '@shared/ports';
+import { api } from '@shared/browser-api';
 
 export class ChromeCookieReader implements CookieReader {
   async get(url: string, name: string): Promise<string | undefined> {
-    const cookie = await chrome.cookies.get({ url, name });
+    const cookie = await api.cookies.get({ url, name });
     return cookie?.value && cookie.value.length > 0 ? cookie.value : undefined;
   }
 }

@@ -39,6 +39,8 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('empty-article');
       expect(result.error.message).toContain('readable content');
+      // FP1-FR4: empty-article now points users at Full Page.
+      expect(result.error.message).toContain('Full Page');
     }
   });
 

@@ -17,6 +17,7 @@
  * Never touches a real Supernote server — fetch and chrome are both faked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureModeDescription } from '@capture/copy';
 
 const OPTIONS_HTML = `
   <main>
@@ -33,6 +34,8 @@ const OPTIONS_HTML = `
     <button id="seg-private" type="button">Private Cloud</button>
     <div id="cloud-panel"></div>
     <div id="private-panel" hidden></div>
+    <select id="default-mode"><option value="reader">r</option><option value="fullpage">f</option></select>
+    <span id="default-mode-hint"></span>
     <select id="default-format"><option value="epub">e</option><option value="pdf">p</option></select>
     <input id="confirm-filename" type="checkbox" />
     <ul id="folder-list"></ul>
@@ -162,5 +165,36 @@ describe('Options shell DOM-smoke (wired Connect/Disconnect, F10 wiring)', () =>
     await flush();
 
     expect(chromeFake.storage.local.has('supernote.token')).toBe(false);
+  });
+
+  it('renders the default capture-mode picker + hint from stored settings (FP1-FR2 / FP8-FR1)', async () => {
+    await import('../../src/options/options');
+    await flush(); // initial render()
+
+    const mode = document.getElementById('default-mode') as HTMLSelectElement;
+    expect(mode).not.toBeNull();
+    expect(Array.from(mode.options).map((o) => o.value)).toEqual(['reader', 'fullpage']);
+    const hint = document.getElementById('default-mode-hint')!;
+    expect(hint).not.toBeNull();
+
+    // No stored value → defaults to 'reader' with its matching hint.
+    expect(mode.value).toBe('reader');
+    expect(hint.textContent).toBe(captureModeDescription('reader'));
+  });
+
+  it('persists a capture-mode change and updates the hint (FP1-FR2 / FP8-FR1)', async () => {
+    await import('../../src/options/options');
+    await flush(); // initial render()
+
+    const mode = document.getElementById('default-mode') as HTMLSelectElement;
+    const hint = document.getElementById('default-mode-hint')!;
+
+    mode.value = 'fullpage';
+    mode.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(); // setDefaultMode persist + hint update
+
+    // Persisted via SettingsStore.setDefaultMode → chrome.storage.local.
+    expect(chromeFake.storage.local.get('settings.defaultMode')).toBe('fullpage');
+    expect(hint.textContent).toBe(captureModeDescription('fullpage'));
   });
 });

@@ -24,10 +24,12 @@ import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
-import { pickFolder, selectableFolders } from '@settings/pick-folder';
+import { folderKeyForTarget, pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
-import { buildOptionsView, parseFormatChange } from './options-view-model';
+import { buildOptionsView, parseFormatChange, parseModeChange } from './options-view-model';
+import { captureModeDescription } from '@capture/copy';
+import { api } from '@shared/browser-api';
 
 const store = new ChromeStorageLocal();
 const settings = new SettingsStore(store);
@@ -46,7 +48,7 @@ async function render(): Promise<void> {
   const view = buildOptionsView(session, account, current);
 
   const logo = byId<HTMLImageElement>('logo');
-  if (logo) logo.src = chrome.runtime.getURL('icons/icon512.png');
+  if (logo) logo.src = api.runtime.getURL('icons/icon512.png');
 
   const status = byId('connection-status');
   if (status) {
@@ -77,6 +79,24 @@ async function render(): Promise<void> {
           : 'Not connected';
   }
 
+  const mode = byId<HTMLSelectElement>('default-mode');
+  const modeHint = byId('default-mode-hint');
+  if (mode) {
+    mode.value = view.defaultMode;
+    if (modeHint) {
+      modeHint.textContent = captureModeDescription(view.defaultMode);
+    }
+    mode.addEventListener('change', () => {
+      const parsed = parseModeChange(mode.value);
+      if (parsed) {
+        void settings.setDefaultMode(parsed);
+        if (modeHint) {
+          modeHint.textContent = captureModeDescription(parsed);
+        }
+      }
+    });
+  }
+
   const format = byId<HTMLSelectElement>('default-format');
   if (format) {
     format.value = view.defaultFormat;
@@ -102,7 +122,7 @@ async function render(): Promise<void> {
 
 /** Notify the service worker that a target (re)connected, so F9 auto-retries (F9-FR1). */
 function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
-  void chrome.runtime.sendMessage({ type: 'reconnected', target });
+  void api.runtime.sendMessage({ type: 'reconnected', target });
 }
 
 /**
@@ -114,7 +134,7 @@ function notifyReconnected(target: 'cloud' | 'privatecloud'): void {
 function wireConnection(): void {
   byId<HTMLButtonElement>('connect-cloud')?.addEventListener('click', () => {
     const hint = byId('connect-cloud-hint');
-    void chrome.runtime
+    void api.runtime
       .sendMessage({ type: 'connect-cloud' })
       .then((res: { ok?: boolean } | undefined) => {
         if (res?.ok === true) {
@@ -237,7 +257,7 @@ function renderOnboarding(target: 'cloud' | 'privatecloud'): void {
 function renderPrivacy(): void {
   const link = byId<HTMLAnchorElement>('privacy-link');
   if (link) {
-    link.href = chrome.runtime.getURL(PRIVACY_PAGE_PATH);
+    link.href = api.runtime.getURL(PRIVACY_PAGE_PATH);
   }
   const note = byId('password-note');
   if (note) {
@@ -266,13 +286,37 @@ async function renderFolderPicker(target: 'cloud' | 'privatecloud'): Promise<voi
     list.textContent = 'Could not load folders.';
     return;
   }
+  // The folder currently saved as this target's destination, so we can show the
+  // user which one their sends go to (F7-FR2 UX). Undefined → none chosen yet, so
+  // the card's "Defaults to Document/" hint applies and nothing is highlighted.
+  const selectedId = await store.get<string>(folderKeyForTarget(target));
   list.replaceChildren();
+
+  // Exactly one button carries the selected styling at a time; clicking re-marks
+  // immediately so the choice is visible without a reload.
+  const markSelected = (chosen: HTMLButtonElement): void => {
+    for (const btn of list.querySelectorAll('button')) {
+      const isChosen = btn === chosen;
+      btn.classList.toggle('is-selected', isChosen);
+      if (isChosen) {
+        btn.setAttribute('aria-current', 'true');
+      } else {
+        btn.removeAttribute('aria-current');
+      }
+    }
+  };
+
   for (const folder of selectableFolders(listed.value)) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = folder.name;
+    if (folder.id === selectedId) {
+      button.classList.add('is-selected');
+      button.setAttribute('aria-current', 'true');
+    }
     button.addEventListener('click', () => {
+      markSelected(button);
       void pickFolder(store, target, folder.id);
     });
     item.appendChild(button);

@@ -1,6 +1,6 @@
 
-# Spec files
-spec/*
+# Spec files stay local (research/scratch and deliverables alike — never tracked)
+spec/
 
 # Claude
 .claude-flow/
@@ -11,7 +11,9 @@ CLAUDE.md
 # Build & test artifacts
 node_modules/
 dist/
+dist-firefox/
 artifacts/
+web-ext-artifacts/
 coverage/
 .swarm/
 ruvector.db

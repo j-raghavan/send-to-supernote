@@ -24,7 +24,15 @@ export const MENU_READER: MenuItem = {
   contexts: ['page'],
 };
 
-export const MENU_ITEMS: readonly MenuItem[] = [MENU_READER];
+/** Full Page entry point — captures the page as-is to an image-based PDF (FP1-FR2). */
+export const MENU_FULLPAGE: MenuItem = {
+  id: 'send-to-supernote-fullpage',
+  title: 'Send to Supernote (Full Page)',
+  mode: 'fullpage',
+  contexts: ['page'],
+};
+
+export const MENU_ITEMS: readonly MenuItem[] = [MENU_READER, MENU_FULLPAGE];
 
 /** Resolve the capture mode for a clicked context-menu item id, if recognized. */
 export function captureModeForMenuItem(menuItemId: string): CaptureMode | undefined {

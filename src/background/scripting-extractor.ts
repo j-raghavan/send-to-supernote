@@ -12,12 +12,13 @@
 /* c8 ignore start */
 import type { Extractor } from '@shared/ports';
 import type { ReaderExtract } from '@domain/capture';
-import type { OffscreenReaderExtractor } from './offscreen-reader';
+import type { ReaderParser } from './reader-parser';
+import { api } from '@shared/browser-api';
 
 export class ScriptingExtractor implements Extractor {
   constructor(
     private readonly tabId: number,
-    private readonly reader: OffscreenReaderExtractor,
+    private readonly reader: ReaderParser,
   ) {}
 
   async extractReader(): Promise<ReaderExtract> {
@@ -31,7 +32,7 @@ export class ScriptingExtractor implements Extractor {
   }
 
   private async run<T>(func: () => T): Promise<T> {
-    const [injection] = await chrome.scripting.executeScript({
+    const [injection] = await api.scripting.executeScript({
       target: { tabId: this.tabId },
       func,
     });

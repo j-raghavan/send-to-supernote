@@ -19,6 +19,7 @@ import { SystemClock } from '../background/clock';
 import { StorageKeys } from '@shared/storage-keys';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
+import { api } from '@shared/browser-api';
 import type { Target } from '@domain/settings';
 import { buildPopupView } from './popup-view';
 import { PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from '../options/privacy-copy';
@@ -41,6 +42,29 @@ function providerLabel(target: Target): string {
   return target === 'privatecloud' ? 'Private Cloud' : 'Supernote Cloud';
 }
 
+/**
+ * `runtime.sendMessage` with one retry. On a cold start the background (Chrome
+ * service worker / Firefox event page) may not have attached its `onMessage`
+ * listener the instant the popup fires, so the call rejects with "Could not
+ * establish connection. Receiving end does not exist." A brief retry lets the
+ * background finish starting. The Firefox background now also loads its real
+ * module synchronously (so listeners register during evaluation — see
+ * vite.config.ts), making this belt-and-suspenders that also covers Chrome SW
+ * eviction.
+ */
+async function sendMessageWithRetry<T>(message: unknown, retries = 1, delayMs = 250): Promise<T> {
+  try {
+    const response: unknown = await api.runtime.sendMessage(message);
+    return response as T;
+  } catch (thrown) {
+    if (retries <= 0) {
+      throw thrown;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return sendMessageWithRetry<T>(message, retries - 1, delayMs);
+  }
+}
+
 /** Ask the service worker to sign in (the SW's fetch gets the DNR Origin-strip). */
 async function requestConnect(payload: {
   target: Target;
@@ -50,7 +74,7 @@ async function requestConnect(payload: {
 }): Promise<{ ok: boolean; error?: string; detail?: string }> {
   let res: { ok?: boolean; error?: string; detail?: string } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'connect', ...payload });
+    res = await sendMessageWithRetry<typeof res>({ type: 'connect', ...payload });
   } catch (thrown) {
     // sendMessage rejects when there is no receiver (SW failed to register its
     // listener — usually a stale/un-reloaded build or a load-time crash).
@@ -87,7 +111,7 @@ async function requestConnect(payload: {
 async function requestCloudConnect(): Promise<{ ok: boolean; pending: boolean; reason?: string }> {
   let res: { ok?: boolean; pending?: boolean } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'connect-cloud' });
+    res = await sendMessageWithRetry<typeof res>({ type: 'connect-cloud' });
   } catch (thrown) {
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     return {
@@ -121,11 +145,18 @@ async function render(): Promise<void> {
   const view = buildPopupView(session, account, current);
 
   const logo = byId<HTMLImageElement>('logo');
-  if (logo) logo.src = chrome.runtime.getURL('icons/icon32.png');
+  if (logo) logo.src = api.runtime.getURL('icons/icon32.png');
 
   const privacy = byId<HTMLAnchorElement>('privacy');
-  if (privacy) privacy.href = chrome.runtime.getURL(PRIVACY_PAGE_PATH);
-  byId('settings')?.addEventListener('click', () => void chrome.runtime.openOptionsPage());
+  if (privacy) privacy.href = api.runtime.getURL(PRIVACY_PAGE_PATH);
+  // Firefox does not auto-dismiss the action popup when the options tab opens
+  // (Chrome does), so the popup would otherwise linger over the settings tab.
+  // Close it explicitly once the open request is dispatched — same pattern the
+  // send (above) and cloud-connect flows use. `Promise.resolve` tolerates both
+  // the Promise- and void-returning `openOptionsPage` signatures.
+  byId('settings')?.addEventListener('click', () => {
+    void Promise.resolve(api.runtime.openOptionsPage()).finally(() => window.close());
+  });
 
   // Build/host indicator — confirms which API host the loaded build targets
   // (a fresh build reads "viewer.supernote.com"; a stale one would read "cloud").
@@ -150,7 +181,7 @@ function renderConnected(account: string | undefined, target: Target): void {
   }
 
   const titleEl = byId('page-title');
-  void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+  void api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const title = tabs[0]?.title;
     if (titleEl) titleEl.textContent = title && title.trim() ? title : 'This page';
   });
@@ -185,7 +216,7 @@ async function runSendFromPopup(target: Target): Promise<void> {
 
   let res: { ok?: boolean; error?: string } | undefined;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'send' });
+    res = await sendMessageWithRetry<typeof res>({ type: 'send' });
   } catch (thrown) {
     res = { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
   }
@@ -259,14 +290,21 @@ async function connectCloud(): Promise<void> {
     void render(); // already signed in — captured immediately
     return;
   }
+  if (result.pending) {
+    // The official login tab is now open and focused. Close the popup so the user
+    // signs in there; the background finishes the connect (captures the cookie,
+    // closes the tab, shows a "Connected to Supernote Cloud" notification). Keeping
+    // the popup open here just stranded the user on a "reopen once connected" note.
+    window.close();
+    return;
+  }
+  // Genuine failure to start sign-in — re-enable the button and surface the reason.
   if (button) {
     button.disabled = false;
     button.textContent = 'Connect Supernote Cloud';
   }
   if (statusEl) {
-    statusEl.textContent = result.pending
-      ? 'Finish signing in on the Supernote tab — reopen this popup once connected.'
-      : (result.reason ?? 'Could not start sign-in. Please try again.');
+    statusEl.textContent = result.reason ?? 'Could not start sign-in. Please try again.';
     statusEl.hidden = false;
   }
 }

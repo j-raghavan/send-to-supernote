@@ -19,6 +19,14 @@ export interface RenderOptions {
   pageSize: PageSize;
   /** Paginate long content across multiple pages (F3-FR2). */
   paginate: boolean;
+  /**
+   * The captured document's real title, used as the EPUB heading/metadata. When
+   * absent, the renderer derives one from the content — it must NEVER fall back
+   * to the render context's own `document.title` (that would leak the offscreen/
+   * event-page page title, e.g. "Send to Supernote — Offscreen Renderer", into
+   * the output).
+   */
+  title?: string;
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {

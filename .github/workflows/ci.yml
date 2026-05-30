@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, feat/mvp]
+    branches: [master, 'feat/*']
   pull_request:
 
 permissions:
@@ -46,6 +46,40 @@ jobs:
         run: |
           test "$(jq -r '.manifest_version' dist/manifest.json)" = "3"
           echo "dist manifest v$(jq -r '.version' dist/manifest.json) (MV$(jq -r '.manifest_version' dist/manifest.json))"
+
+      # Firefox (AMO) build must also be loadable, an MV3 event page, and contain
+      # NO offscreen (Firefox renders in-page — FF6/FF7-FR1, I-F2/FF2-FR6). This is
+      # the emitted-dist audit deferred from the FF6 config-level test.
+      - name: Build Firefox (event-page, no offscreen)
+        run: npm run build:firefox
+
+      - name: Verify Firefox manifest is an MV3 event page with no offscreen
+        run: |
+          set -euo pipefail
+          M=dist-firefox/manifest.json
+          test "$(jq -r '.manifest_version' "$M")" = "3"
+          # Event page (background.scripts + type module), NOT a service worker.
+          test "$(jq -r '.background.service_worker // "MISSING"' "$M")" = "MISSING"
+          test "$(jq -r '.background.scripts[0] // "MISSING"' "$M")" != "MISSING"
+          test "$(jq -r '.background.type' "$M")" = "module"
+          # AMO add-on id pinned.
+          test "$(jq -r '.browser_specific_settings.gecko.id' "$M")" = "send-to-supernote@j-raghavan"
+          # offscreen permission dropped, and the offscreen document/modules are
+          # absent from the bundle entirely.
+          test "$(jq -r '.permissions | index("offscreen") // "ABSENT"' "$M")" = "ABSENT"
+          if find dist-firefox -iname '*offscreen*' | grep -q .; then
+            echo "::error::offscreen artifact present in the Firefox bundle"; exit 1
+          fi
+          if grep -rqi 'chrome\.offscreen' dist-firefox; then
+            echo "::error::chrome.offscreen referenced in the Firefox bundle"; exit 1
+          fi
+          # The emitted background loader the manifest points at must exist.
+          test -f "dist-firefox/$(jq -r '.background.scripts[0]' "$M")"
+          echo "Firefox dist OK: MV3 event page, gecko id set, offscreen-free"
+
+      - name: web-ext lint (AMO static checks — no errors)
+        if: matrix.node-version == '22'
+        run: npm run lint:firefox
 
       - name: Upload coverage report
         if: matrix.node-version == '22'

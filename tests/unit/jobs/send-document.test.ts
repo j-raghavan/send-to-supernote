@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type SendDocumentDeps, type SendRequest, sendDocument } from '@jobs/send-document';
 import { ok, err } from '@shared/result';
 import type { Target } from '@domain/settings';
+import type { StitchGeometry, TileRef } from '@conversion/fullpage-stitch-core';
+import type { PageSize } from '@domain/conversion';
+import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
+import type { Result } from '@shared/result';
 import { TokenStore } from '@auth/token-store';
 import { InMemoryBlobTransfer } from '../../../src/background/in-memory-blob-transfer';
 import { FakeExtractor } from '../../fakes/fake-extractor';
@@ -393,5 +397,188 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(result.ok).toBe(false);
     expect(offer).not.toHaveBeenCalled();
     expect(pcPort.uploadCalls).toHaveLength(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Full Page branch (FP4-FR4 / Batch F) — capture → stitch → upload PDF.
+// Covers all 4 guards/paths of the `mode === 'fullpage'` branch (FP1-AC1/IP-3).
+// ──────────────────────────────────────────────────────────────────────────
+
+const GEOMETRY: StitchGeometry = {
+  totalHeight: 4000,
+  viewportHeight: 800,
+  width: 1280,
+  dpr: 2,
+  pageSize: 'a4',
+};
+
+describe('sendDocument Full Page branch (FP4-FR4, FP1-AC1/IP-3)', () => {
+  let h: Harness;
+  let tileHandle: string;
+  let stitchHandle: string;
+  type Fullpage = NonNullable<SendDocumentDeps['fullpage']>;
+  let captureFn: ReturnType<typeof vi.fn>;
+  let stitchFn: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    h = await harness();
+    // Pre-store a tile PNG so the post-stitch delete is actually exercised.
+    tileHandle = await h.blobs.put(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), 'image/png');
+
+    stitchFn = vi.fn(async (_tiles: TileRef[], _geom: StitchGeometry) => {
+      stitchHandle = await h.blobs.put(new Uint8Array([1, 2, 3]), 'application/pdf');
+      return { handle: stitchHandle, contentType: 'application/pdf', size: 3 };
+    });
+    captureFn = vi.fn(
+      (_pageSize: PageSize): Promise<Result<FullPageResult, FullPageError>> =>
+        Promise.resolve(
+          ok({ tiles: [{ handle: tileHandle, offsetY: 0 }], geometry: GEOMETRY, truncated: false }),
+        ),
+    );
+    const fullpage: Fullpage = {
+      capture: captureFn as unknown as Fullpage['capture'],
+      stitcher: { stitch: stitchFn as unknown as Fullpage['stitcher']['stitch'] },
+    };
+    h.deps.fullpage = fullpage;
+  });
+
+  it('happy path: capture → stitch → upload an application/pdf and reaches done', async () => {
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.state).toBe('done');
+    }
+    // The stitched PDF was uploaded to the (only) resolved Supernote/cloud port.
+    expect(h.port.uploadCalls).toHaveLength(1);
+    expect(h.port.uploadCalls[0]!.contentType).toBe('application/pdf');
+    // Empty title → the <hostname>-<date> fallback drives the filename (FakeClock).
+    expect(h.port.uploadCalls[0]!.fileName).toBe('example.com-2026-05-28.pdf');
+    // capture was handed the DEFAULT_RENDER_OPTIONS.pageSize.
+    expect(captureFn).toHaveBeenCalledWith('a4');
+    expect(stitchFn).toHaveBeenCalledOnce();
+    // Progress toasts: Capturing → Converting → Uploading → Sent.
+    const titles = h.notifier.notifications.map((n) => n.title);
+    expect(titles).toContain('Capturing');
+    expect(titles).toContain('Converting');
+    expect(titles).toContain('Uploading');
+    expect(titles.at(-1)).toBe('Sent to Supernote');
+    // Badge ends non-error (idle).
+    expect(h.badge.current).toBe('idle');
+    // The per-tile PNG handle was deleted after stitching.
+    expect(await h.blobs.get(tileHandle)).toBeUndefined();
+  });
+
+  it('truncated capture: warns the page was capped but still completes the send (FP6-FR1)', async () => {
+    h.deps.fullpage!.capture = (_pageSize: PageSize) =>
+      Promise.resolve(
+        ok({ tiles: [{ handle: tileHandle, offsetY: 0 }], geometry: GEOMETRY, truncated: true }),
+      );
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    // The send still succeeds — truncation is a warning, not a failure.
+    expect(result.ok).toBe(true);
+    expect(h.port.uploadCalls).toHaveLength(1);
+    // …and the user was warned the page was capped.
+    const capped = h.notifier.notifications.find((n) => n.title === 'Full Page was capped');
+    expect(capped).toBeDefined();
+    expect(capped!.level).toBe('warning');
+  });
+
+  it('stitch throws: caught as a render failure, error badge, tiles freed, no upload (#6)', async () => {
+    h.deps.fullpage!.stitcher = {
+      stitch: () => Promise.reject(new Error('canvas blew up')),
+    };
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('render');
+      expect(result.error.message).toBe('canvas blew up');
+    }
+    expect(h.badge.current).toBe('error');
+    expect(h.notifier.notifications.some((n) => n.title === 'Conversion failed')).toBe(true);
+    expect(h.port.uploadCalls).toHaveLength(0);
+    // The captured tiles were freed even though stitching failed (no orphans).
+    expect(await h.blobs.get(tileHandle)).toBeUndefined();
+  });
+
+  it('stitch throws a non-Error: still a render failure with a default message', async () => {
+    h.deps.fullpage!.stitcher = {
+      // Intentionally a non-Error rejection to exercise the default-message branch.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      stitch: () => Promise.reject('boom'),
+    };
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('render');
+      expect(result.error.message).toBe('Could not build the PDF.');
+    }
+    expect(h.badge.current).toBe('error');
+  });
+
+  it('capture failure: surfaces a capture error, sets error badge, no upload', async () => {
+    h.deps.fullpage!.capture = (_pageSize: PageSize) =>
+      Promise.resolve(
+        err({ kind: 'capture-failed' as const, message: 'Could not capture the page.' }),
+      );
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('capture');
+      expect(result.error.message).toBe('Could not capture the page.');
+    }
+    expect(h.badge.current).toBe('error');
+    // A "Couldn't capture this page" notification (noteCaptureFailed) was shown.
+    expect(h.notifier.notifications.some((n) => n.title === "Couldn't capture this page")).toBe(
+      true,
+    );
+    expect(h.port.uploadCalls).toHaveLength(0);
+  });
+
+  it('missing-blob: stitched handle not in the store → render error, error badge', async () => {
+    h.deps.fullpage!.stitcher = {
+      stitch: () =>
+        Promise.resolve({
+          handle: 'ghost-stitch',
+          contentType: 'application/pdf',
+          size: 1,
+        }),
+    };
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('render');
+      expect(result.error.message).toContain('missing');
+    }
+    expect(h.badge.current).toBe('error');
+    expect(h.port.uploadCalls).toHaveLength(0);
+  });
+
+  it('unavailable: fullpage deps omitted → capture error "unavailable", error badge', async () => {
+    delete h.deps.fullpage;
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('capture');
+      expect(result.error.message).toContain('unavailable');
+    }
+    expect(h.badge.current).toBe('error');
+    expect(h.notifier.notifications.some((n) => n.title === "Couldn't capture this page")).toBe(
+      true,
+    );
+    expect(h.port.uploadCalls).toHaveLength(0);
   });
 });

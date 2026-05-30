@@ -23,9 +23,13 @@ export function resolveSendRequest(
   overrides: SendOverrides = {},
 ): SendRequest {
   const target = overrides.target ?? settings.target;
+  // Full Page is a screenshot — no reflowable text — so it forces PDF here, not
+  // only in the UI: a stored defaultFormat='epub' must not leak into a fullpage
+  // send (FP1-FR3).
+  const mode = overrides.mode ?? settings.defaultMode;
   return {
-    mode: overrides.mode ?? settings.defaultMode,
-    format: overrides.format ?? settings.defaultFormat,
+    mode,
+    format: mode === 'fullpage' ? 'pdf' : (overrides.format ?? settings.defaultFormat),
     target,
     ...(target === 'cloud' && settings.cloudFolderId !== undefined
       ? { folderId: settings.cloudFolderId }

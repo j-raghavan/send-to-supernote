@@ -45,3 +45,19 @@ export function noteSendFailed(reason: string): Notification {
 export function noteConversionFailed(reason: string): Notification {
   return { level: 'error', title: 'Conversion failed', message: reason };
 }
+
+export function noteCaptureFailed(reason: string): Notification {
+  return { level: 'error', title: "Couldn't capture this page", message: reason };
+}
+
+/**
+ * Full Page hit the capture cap (FP6-FR1) — the document was sent, but only the
+ * top portion was captured. A warning, not a failure: the send still succeeds.
+ */
+export function noteFullPageTruncated(): Notification {
+  return {
+    level: 'warning',
+    title: 'Full Page was capped',
+    message: 'This page was very long — only the captured portion was sent.',
+  };
+}

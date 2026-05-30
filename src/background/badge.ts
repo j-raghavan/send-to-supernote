@@ -6,12 +6,13 @@
 /* c8 ignore start */
 import type { Badge, BadgeState } from '@shared/ports';
 import { badgeDisplay } from '@domain/badge-display';
+import { api } from '@shared/browser-api';
 
 export class ChromeBadge implements Badge {
   async set(state: BadgeState): Promise<void> {
     const display = badgeDisplay(state);
-    await chrome.action.setBadgeBackgroundColor({ color: display.color });
-    await chrome.action.setBadgeText({ text: display.text });
+    await api.action.setBadgeBackgroundColor({ color: display.color });
+    await api.action.setBadgeText({ text: display.text });
   }
 }
 /* c8 ignore stop */
