@@ -78,6 +78,7 @@ jobs:
           echo "Firefox dist OK: MV3 event page, gecko id set, offscreen-free"
 
       - name: web-ext lint (AMO static checks — no errors)
+        if: matrix.node-version == '22'
         run: npm run lint:firefox
 
       - name: Upload coverage report

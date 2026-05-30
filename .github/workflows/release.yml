@@ -40,6 +40,15 @@ jobs:
       # for self-hosting/QA. The Chrome Web Store upload uses the ZIP, not the
       # CRX. The key determines the extension ID — keep it stable and secret.
       CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+      # Optional AMO (addons.mozilla.org) submission-API credentials (repo
+      # secrets). When BOTH are set, the Firefox build is uploaded + signed on
+      # AMO via `web-ext sign`. Leave unset to skip (the unsigned ZIP is still
+      # attached to the Release for manual AMO upload / about:debugging). The
+      # FIRST listing and the required source-code submission are done once in
+      # the AMO UI; this automates subsequent version bumps. Job-level (not
+      # step-level) so the sign step's `if:` can read them.
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     outputs:
       tag: ${{ steps.ver.outputs.tag }}
       version: ${{ steps.ver.outputs.version }}
@@ -123,6 +132,28 @@ jobs:
           fi
           test -f "artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip"
 
+      # Re-run the AMO static checks at release time so a published Firefox asset
+      # can never drift from what CI gated (CI runs this on the Node 22 leg).
+      - name: web-ext lint the Firefox build (AMO static checks — no errors)
+        run: npm run lint:firefox
+
+      # Submit + sign on AMO when both submission-API credentials are configured.
+      # `--channel listed` uploads the new version for AMO review/distribution
+      # (Mozilla signs and serves it; no .xpi is returned). For self-distribution
+      # switch to `--channel unlisted`, which signs and writes the .xpi into
+      # artifacts/ (picked up by the upload steps below via artifacts/*.xpi).
+      # web-ext signs the built dist-firefox/ directory directly. Source code is
+      # submitted separately in the AMO UI (bundled build → reviewers need source).
+      - name: Submit + sign Firefox on AMO (only when AMO credentials are configured)
+        if: env.AMO_JWT_ISSUER != '' && env.AMO_JWT_SECRET != ''
+        run: |
+          npx web-ext sign \
+            --source-dir dist-firefox \
+            --channel listed \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET" \
+            --artifacts-dir artifacts
+
       - name: Build signed CRX (only when CRX_PRIVATE_KEY is configured)
         if: env.CRX_PRIVATE_KEY != ''
         env:
@@ -137,6 +168,7 @@ jobs:
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+            artifacts/*.xpi
           if-no-files-found: warn
 
       - name: Publish / update the GitHub Release with assets
@@ -152,6 +184,7 @@ jobs:
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-firefox-${{ steps.ver.outputs.version }}.zip
             artifacts/send-to-supernote-${{ steps.ver.outputs.version }}.crx
+            artifacts/*.xpi
 
   changelog:
     name: Enrich release notes and update CHANGELOG
