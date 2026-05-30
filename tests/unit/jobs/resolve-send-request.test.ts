@@ -42,4 +42,45 @@ describe('resolveSendRequest (F6-FR1)', () => {
     delete noFolder.cloudFolderId;
     expect(resolveSendRequest(noFolder, page).folderId).toBeUndefined();
   });
+
+  describe('Full Page forces PDF (FP1-FR3)', () => {
+    it('forces format:pdf when mode comes from settings.defaultMode=fullpage, even with defaultFormat=epub', () => {
+      const fullpageSettings: Settings = {
+        ...settings,
+        defaultMode: 'fullpage',
+        defaultFormat: 'epub',
+      };
+      const req = resolveSendRequest(fullpageSettings, page);
+      expect(req.mode).toBe('fullpage');
+      expect(req.format).toBe('pdf');
+    });
+
+    it('forces format:pdf when mode comes from overrides.mode=fullpage, even with overrides.format=epub', () => {
+      const epubSettings: Settings = { ...settings, defaultFormat: 'epub' };
+      const req = resolveSendRequest(epubSettings, page, {
+        mode: 'fullpage',
+        format: 'epub',
+      });
+      expect(req.mode).toBe('fullpage');
+      expect(req.format).toBe('pdf');
+    });
+
+    it('keeps target/folderId/confirmFilename/page identical across reader and fullpage', () => {
+      const base: Settings = { ...settings, defaultMode: 'reader', defaultFormat: 'pdf' };
+      const reader = resolveSendRequest(base, page);
+      const fullpage = resolveSendRequest({ ...base, defaultMode: 'fullpage' }, page);
+      expect(fullpage.target).toBe(reader.target);
+      expect(fullpage.folderId).toBe(reader.folderId);
+      expect(fullpage.confirmFilename).toBe(reader.confirmFilename);
+      expect(fullpage.page).toBe(reader.page);
+    });
+
+    it('still honors overrides.format ?? defaultFormat for the reader path', () => {
+      const epubSettings: Settings = { ...settings, defaultMode: 'reader', defaultFormat: 'epub' };
+      // No override → defaultFormat.
+      expect(resolveSendRequest(epubSettings, page).format).toBe('epub');
+      // Override wins for reader.
+      expect(resolveSendRequest(epubSettings, page, { format: 'pdf' }).format).toBe('pdf');
+    });
+  });
 });
