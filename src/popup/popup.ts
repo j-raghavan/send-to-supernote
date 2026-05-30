@@ -149,7 +149,14 @@ async function render(): Promise<void> {
 
   const privacy = byId<HTMLAnchorElement>('privacy');
   if (privacy) privacy.href = api.runtime.getURL(PRIVACY_PAGE_PATH);
-  byId('settings')?.addEventListener('click', () => void api.runtime.openOptionsPage());
+  // Firefox does not auto-dismiss the action popup when the options tab opens
+  // (Chrome does), so the popup would otherwise linger over the settings tab.
+  // Close it explicitly once the open request is dispatched — same pattern the
+  // send (above) and cloud-connect flows use. `Promise.resolve` tolerates both
+  // the Promise- and void-returning `openOptionsPage` signatures.
+  byId('settings')?.addEventListener('click', () => {
+    void Promise.resolve(api.runtime.openOptionsPage()).finally(() => window.close());
+  });
 
   // Build/host indicator — confirms which API host the loaded build targets
   // (a fresh build reads "viewer.supernote.com"; a stale one would read "cloud").
