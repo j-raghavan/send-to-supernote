@@ -42,6 +42,29 @@ function providerLabel(target: Target): string {
   return target === 'privatecloud' ? 'Private Cloud' : 'Supernote Cloud';
 }
 
+/**
+ * `runtime.sendMessage` with one retry. On a cold start the background (Chrome
+ * service worker / Firefox event page) may not have attached its `onMessage`
+ * listener the instant the popup fires, so the call rejects with "Could not
+ * establish connection. Receiving end does not exist." A brief retry lets the
+ * background finish starting. The Firefox background now also loads its real
+ * module synchronously (so listeners register during evaluation — see
+ * vite.config.ts), making this belt-and-suspenders that also covers Chrome SW
+ * eviction.
+ */
+async function sendMessageWithRetry<T>(message: unknown, retries = 1, delayMs = 250): Promise<T> {
+  try {
+    const response: unknown = await api.runtime.sendMessage(message);
+    return response as T;
+  } catch (thrown) {
+    if (retries <= 0) {
+      throw thrown;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return sendMessageWithRetry<T>(message, retries - 1, delayMs);
+  }
+}
+
 /** Ask the service worker to sign in (the SW's fetch gets the DNR Origin-strip). */
 async function requestConnect(payload: {
   target: Target;
@@ -51,7 +74,7 @@ async function requestConnect(payload: {
 }): Promise<{ ok: boolean; error?: string; detail?: string }> {
   let res: { ok?: boolean; error?: string; detail?: string } | undefined;
   try {
-    res = await api.runtime.sendMessage({ type: 'connect', ...payload });
+    res = await sendMessageWithRetry<typeof res>({ type: 'connect', ...payload });
   } catch (thrown) {
     // sendMessage rejects when there is no receiver (SW failed to register its
     // listener — usually a stale/un-reloaded build or a load-time crash).
@@ -88,7 +111,7 @@ async function requestConnect(payload: {
 async function requestCloudConnect(): Promise<{ ok: boolean; pending: boolean; reason?: string }> {
   let res: { ok?: boolean; pending?: boolean } | undefined;
   try {
-    res = await api.runtime.sendMessage({ type: 'connect-cloud' });
+    res = await sendMessageWithRetry<typeof res>({ type: 'connect-cloud' });
   } catch (thrown) {
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     return {
@@ -186,7 +209,7 @@ async function runSendFromPopup(target: Target): Promise<void> {
 
   let res: { ok?: boolean; error?: string } | undefined;
   try {
-    res = await api.runtime.sendMessage({ type: 'send' });
+    res = await sendMessageWithRetry<typeof res>({ type: 'send' });
   } catch (thrown) {
     res = { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
   }
