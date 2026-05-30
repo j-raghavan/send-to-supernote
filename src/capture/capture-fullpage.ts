@@ -78,13 +78,19 @@ export async function captureFullPage(
   const cap = deps.cap ?? DEFAULT_CAP;
   const delayMs = captureDelayMs(target);
 
+  // Hoisted so the `finally` can free the stored tile blobs on ANY non-success
+  // exit (error return, timeout, or throw). On success the tiles are handed to
+  // the stitcher, which frees them after paginating — so we only clean up here
+  // when the run did NOT hand them off (prevents orphaned IndexedDB blobs).
+  const tiles: TileRef[] = [];
+  let handedOff = false;
+
   try {
     const windowId = await capture.windowIdOf(deps.tabId);
     const geometry = await driver.measure();
     const offsets = planScrollOffsets(geometry);
     const start = clock.now();
 
-    const tiles: TileRef[] = [];
     let truncated = false;
     let prevY = 0;
 
@@ -130,10 +136,27 @@ export async function captureFullPage(
       prevY = actualY;
     }
 
+    handedOff = true;
     return ok({ tiles, geometry, truncated });
   } finally {
     // FP2-FR4 / IP-1 — restore page + release keep-alive ALWAYS.
     await driver.dispose();
+    // Free any tiles we stored but are NOT returning (error/timeout/throw), so a
+    // failed capture leaves no orphaned blobs in IndexedDB.
+    if (!handedOff) {
+      await releaseTiles(blobs, tiles);
+    }
+  }
+}
+
+/** Best-effort delete of stored tile blobs; never throws (runs in `finally`). */
+async function releaseTiles(blobs: BlobTransfer, tiles: TileRef[]): Promise<void> {
+  for (const tile of tiles) {
+    try {
+      await blobs.delete(tile.handle);
+    } catch {
+      // Best-effort cleanup — a failed delete must not mask the original outcome.
+    }
   }
 }
 

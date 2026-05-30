@@ -5,6 +5,7 @@ import {
   NOTE_CONVERTING,
   noteCaptureFailed,
   noteConversionFailed,
+  noteFullPageTruncated,
   noteSendFailed,
   noteSent,
   noteUploading,
@@ -44,5 +45,12 @@ describe('send notifications (F6-FR5)', () => {
     expect(note.level).toBe('error');
     expect(note.title).toBe("Couldn't capture this page");
     expect(note.message).toBe('Could not capture the page.');
+  });
+
+  it('the Full Page truncation toast is a warning, not a failure (FP6-FR1)', () => {
+    const note = noteFullPageTruncated();
+    expect(note.level).toBe('warning');
+    expect(note.title).toBe('Full Page was capped');
+    expect(note.message).toMatch(/only the captured portion/i);
   });
 });

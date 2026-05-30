@@ -292,6 +292,75 @@ describe('captureFullPage (FP2-FR3 / FP3-FR3/FR4 / FP6-FR1/FR2/FR3)', () => {
     });
   });
 
+  describe('tile-blob cleanup on failure (no orphans)', () => {
+    it('frees the tiles it already stored when a later capture fails', async () => {
+      const h = harness(); // geometry → offsets [0, 800, 1600]
+      const putSpy = vi.spyOn(h.blobs, 'put');
+      const deleteSpy = vi.spyOn(h.blobs, 'delete');
+      // Tile 0 succeeds (stored); tile 1 fails both the attempt and its retry.
+      let n = 0;
+      vi.spyOn(h.capture, 'captureViewport').mockImplementation(() => {
+        n += 1;
+        return n === 1
+          ? Promise.resolve(new Uint8Array([1, 2, 3, 4]))
+          : Promise.reject(new Error('captureVisibleTab failed'));
+      });
+
+      const result = await captureFullPage(h.deps);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error('expected err');
+      }
+      expect(result.error.kind).toBe('capture-failed');
+      // Exactly one tile was stored, and it was deleted in the finally (no orphan).
+      expect(putSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      const storedHandle = (await putSpy.mock.results[0]!.value) as string;
+      expect(await h.blobs.get(storedHandle)).toBeUndefined();
+      expect(h.driver.disposeCalls).toBe(1);
+    });
+
+    it('frees stored tiles on timeout too', async () => {
+      // start=0; i===0 guard reads 0 (under cap) → tile 0 stored; i===1 guard
+      // reads 2000 (> 1000) → capture-timeout with one stored tile to clean.
+      let reads = 0;
+      const clock = new FakeClock(0);
+      vi.spyOn(clock, 'now').mockImplementation(() => {
+        reads += 1;
+        return reads <= 2 ? 0 : 2000;
+      });
+      const h = harness({ timeoutMs: 1000, clock });
+      const deleteSpy = vi.spyOn(h.blobs, 'delete');
+
+      const result = await captureFullPage(h.deps);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error('expected err');
+      }
+      expect(result.error.kind).toBe('capture-timeout');
+      expect(h.capture.captureCalls).toHaveLength(1); // one tile was stored
+      expect(deleteSpy).toHaveBeenCalledTimes(1); // …then freed
+    });
+
+    it('does NOT free tiles on success (they are handed to the stitcher)', async () => {
+      const h = harness();
+      const deleteSpy = vi.spyOn(h.blobs, 'delete');
+
+      const result = await captureFullPage(h.deps);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        throw new Error('expected ok');
+      }
+      expect(deleteSpy).not.toHaveBeenCalled();
+      for (const tile of result.value.tiles) {
+        expect(await h.blobs.get(tile.handle)).toBeDefined();
+      }
+    });
+  });
+
   describe('dispose-always (FP2-FR4 / IP-1)', () => {
     it('disposes on success', async () => {
       const h = harness();

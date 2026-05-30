@@ -66,6 +66,9 @@ export class ChromeFullPageDriver implements FullPageDriver {
   /** Long-lived keep-alive timer; cleared in `dispose()` (FP3-FR5). */
   private keepAlive: ReturnType<typeof setInterval> | undefined;
 
+  /** The user's scroll position before capture, restored in `dispose()` (FP2-FR4). */
+  private originalScrollY = 0;
+
   constructor(
     private readonly tabId: number,
     private readonly pageSize: PageSize,
@@ -97,8 +100,12 @@ export class ChromeFullPageDriver implements FullPageDriver {
         viewportHeight: window.innerHeight,
         width: window.innerWidth,
         dpr: window.devicePixelRatio,
+        // Record the pre-capture scroll position so dispose() can restore it
+        // instead of dumping the user at the top of the page (FP2-FR4 / IP-1).
+        scrollY: window.scrollY,
       };
     });
+    this.originalScrollY = measured.scrollY;
     return {
       totalHeight: measured.totalHeight,
       viewportHeight: measured.viewportHeight,
@@ -126,15 +133,16 @@ export class ChromeFullPageDriver implements FullPageDriver {
    */
   async dispose(): Promise<void> {
     try {
-      await this.run(() => {
+      await this.run((restoreY) => {
         const STAMP = 'data-sts-fp-original';
         const stamped = document.querySelectorAll<HTMLElement>(`[${STAMP}]`);
         for (const el of Array.from(stamped)) {
           el.style.position = el.getAttribute(STAMP) ?? '';
           el.removeAttribute(STAMP);
         }
-        window.scrollTo(0, 0);
-      });
+        // Restore the user's pre-capture scroll position (FP2-FR4), not (0,0).
+        window.scrollTo(0, restoreY);
+      }, this.originalScrollY);
     } catch {
       // Tab closed/navigated — nothing to restore.
     } finally {

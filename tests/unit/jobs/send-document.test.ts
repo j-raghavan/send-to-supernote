@@ -470,6 +470,59 @@ describe('sendDocument Full Page branch (FP4-FR4, FP1-AC1/IP-3)', () => {
     expect(await h.blobs.get(tileHandle)).toBeUndefined();
   });
 
+  it('truncated capture: warns the page was capped but still completes the send (FP6-FR1)', async () => {
+    h.deps.fullpage!.capture = (_pageSize: PageSize) =>
+      Promise.resolve(
+        ok({ tiles: [{ handle: tileHandle, offsetY: 0 }], geometry: GEOMETRY, truncated: true }),
+      );
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    // The send still succeeds — truncation is a warning, not a failure.
+    expect(result.ok).toBe(true);
+    expect(h.port.uploadCalls).toHaveLength(1);
+    // …and the user was warned the page was capped.
+    const capped = h.notifier.notifications.find((n) => n.title === 'Full Page was capped');
+    expect(capped).toBeDefined();
+    expect(capped!.level).toBe('warning');
+  });
+
+  it('stitch throws: caught as a render failure, error badge, tiles freed, no upload (#6)', async () => {
+    h.deps.fullpage!.stitcher = {
+      stitch: () => Promise.reject(new Error('canvas blew up')),
+    };
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('render');
+      expect(result.error.message).toBe('canvas blew up');
+    }
+    expect(h.badge.current).toBe('error');
+    expect(h.notifier.notifications.some((n) => n.title === 'Conversion failed')).toBe(true);
+    expect(h.port.uploadCalls).toHaveLength(0);
+    // The captured tiles were freed even though stitching failed (no orphans).
+    expect(await h.blobs.get(tileHandle)).toBeUndefined();
+  });
+
+  it('stitch throws a non-Error: still a render failure with a default message', async () => {
+    h.deps.fullpage!.stitcher = {
+      // Intentionally a non-Error rejection to exercise the default-message branch.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      stitch: () => Promise.reject('boom'),
+    };
+
+    const result = await sendDocument(h.deps, req({ mode: 'fullpage' }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('render');
+      expect(result.error.message).toBe('Could not build the PDF.');
+    }
+    expect(h.badge.current).toBe('error');
+  });
+
   it('capture failure: surfaces a capture error, sets error badge, no upload', async () => {
     h.deps.fullpage!.capture = (_pageSize: PageSize) =>
       Promise.resolve(

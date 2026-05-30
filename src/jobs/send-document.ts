@@ -39,6 +39,7 @@ import {
   NOTE_CONVERTING,
   noteCaptureFailed,
   noteConversionFailed,
+  noteFullPageTruncated,
   noteSendFailed,
   noteSent,
   noteUploading,
@@ -210,12 +211,30 @@ export async function sendDocument(
       return fail('capture', captured.error.message, 'failed');
     }
 
-    // converting: stitch tiles -> PDF blob handle (image-based, never inline bytes)
+    // FP6-FR1 — the page hit the capture cap: tell the user the send is partial
+    // (the send still proceeds; this is a warning, not a failure).
+    if (captured.value.truncated) {
+      await deps.notifier.notify(noteFullPageTruncated());
+    }
+
+    // converting: stitch tiles -> PDF blob handle (image-based, never inline bytes).
+    // stitch() can throw (canvas/jsPDF); keep the "decisions return Result" contract
+    // by catching it as a render failure and freeing the captured tiles we now own.
     await deps.notifier.notify(NOTE_CONVERTING);
-    const stitched = await deps.fullpage.stitcher.stitch(
-      captured.value.tiles,
-      captured.value.geometry,
-    );
+    let stitched: Awaited<ReturnType<Stitcher['stitch']>>;
+    try {
+      stitched = await deps.fullpage.stitcher.stitch(captured.value.tiles, captured.value.geometry);
+    } catch (thrown) {
+      const message = thrown instanceof Error ? thrown.message : 'Could not build the PDF.';
+      await releaseTiles(deps, captured.value.tiles);
+      await deps.notifier.notify(noteConversionFailed(message));
+      await deps.badge.set('error');
+      return fail('render', message, 'failed');
+    }
+
+    // Tiles are now stitched into the PDF — free their PNG handles immediately so
+    // no path below (incl. the blob-missing guard) can orphan them.
+    await releaseTiles(deps, captured.value.tiles);
 
     // hashing: read bytes back from the stitched blob handle (same guard as reader)
     const stored = await deps.blobs.get(stitched.handle);
@@ -230,11 +249,6 @@ export async function sendDocument(
     // filename resolves via the <hostname>-<date> fallback (F6-AC2b).
     title = '';
     blobHandle = stitched.handle;
-
-    // Free the per-tile PNG handles now they're stitched into the PDF.
-    for (const t of captured.value.tiles) {
-      await deps.blobs.delete(t.handle);
-    }
   } else {
     // capturing
     await deps.notifier.notify(NOTE_CAPTURING);
@@ -402,6 +416,20 @@ async function finishDeliveryFailure(
 
 async function cleanupBlob(deps: SendDocumentDeps, handle: string): Promise<void> {
   await deps.blobs.delete(handle);
+}
+
+/** Free captured Full Page tile blobs (best-effort; a failed delete is swallowed). */
+async function releaseTiles(
+  deps: SendDocumentDeps,
+  tiles: ReadonlyArray<{ handle: string }>,
+): Promise<void> {
+  for (const tile of tiles) {
+    try {
+      await deps.blobs.delete(tile.handle);
+    } catch {
+      // Best-effort — cleanup must not turn a success into a failure.
+    }
+  }
 }
 
 function fail(kind: SendErrorKind, message: string, state: JobState): Result<never, SendError> {

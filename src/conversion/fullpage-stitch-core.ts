@@ -36,8 +36,24 @@ import { jsPDF } from 'jspdf';
  */
 export const CANVAS_MAX_PX = 16384;
 
+/**
+ * Runaway-capture bounds, shared by the two stages with a DELIBERATELY coupled
+ * meaning of `maxPages`:
+ *   - capture (`captureFullPage`): caps the number of VIEWPORT TILES grabbed
+ *     (`i >= cap.maxPages` stops the scroll loop) — i.e. "≤ N screenfuls".
+ *   - paginate (`planFullPage`): caps the PDF PAGE-BAND count via
+ *     `maxPages · pageHeightPx` as one input to the height clamp.
+ * A viewport tile and a PDF page-band are not the same height, so these are
+ * different units — but both express the same intent ("don't process more than
+ * ~N screens of a pathological page"), and the capture-side tile cap is the one
+ * that binds first in practice (a viewport is shorter than a width-proportional
+ * page band). Keep them coupled on one knob; the coupling is asserted in
+ * `fullpage-cap-coupling.test.ts`. `maxHeightPx` is the absolute device-px guard.
+ */
 export interface FullPageCap {
+  /** Caps captured viewport tiles AND planned PDF page-bands — see interface doc. */
   maxPages: number;
+  /** Absolute canvas height guard in device px (binds only for very wide pages). */
   maxHeightPx: number;
 }
 

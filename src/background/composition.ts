@@ -55,6 +55,9 @@ import { ChromeCapture, ChromeFullPageDriver } from './chrome-capture';
 import { registerOriginStripper } from './origin-stripper.firefox';
 import type { ReaderParser } from './reader-parser';
 
+/** FP6-FR2 whole-run cap for a Full Page capture (generous; bounds runaway pages). */
+const FULLPAGE_TIMEOUT_MS = 120_000;
+
 export const http = new FetchHttpClient();
 export const store = new ChromeStorageLocal();
 export const blobs = new IndexedDbBlobTransfer();
@@ -167,6 +170,9 @@ export function buildDeps(ctx: SendContext): SendDocumentDeps {
           target: __TARGET__,
           clock,
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+          // FP6-FR2 — hard upper bound on the whole capture run so a pathological
+          // page can't run unbounded (the orchestrator restores the page on timeout).
+          timeoutMs: FULLPAGE_TIMEOUT_MS,
         }),
       stitcher: makeStitcher(),
     },

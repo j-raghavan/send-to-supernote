@@ -122,7 +122,7 @@ export interface KeyValueStore {
   keys(): Promise<string[]>;
 }
 
-export type NotifyLevel = 'progress' | 'success' | 'error';
+export type NotifyLevel = 'progress' | 'success' | 'warning' | 'error';
 
 export interface Notification {
   level: NotifyLevel;
