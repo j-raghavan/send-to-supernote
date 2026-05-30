@@ -1,6 +1,7 @@
 
-# Spec files
+# Spec files (research/scratch stay local; the full-page capture deliverable is tracked)
 spec/*
+!spec/SPEC-FULLPAGE-CAPTURE.md
 
 # Claude
 .claude-flow/
