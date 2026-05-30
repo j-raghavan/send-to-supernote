@@ -13,9 +13,13 @@
 > a single-developer Chrome extension, not a microservice fleet. Do **not** over-engineer.
 
 > **MVP deviations (2026-05-28) — authoritative over the F4 rows + file-tree entries below.**
-> Full Page capture was **removed**: `content/fullpage.ts`, `offscreen/canvas-raster.ts`,
-> `domain/fullpage-layout.ts`, and `capture/capture-fullpage.ts` no longer exist; capture is
-> Reader-only (`CaptureMode = 'reader'`) with a page-body fallback in the offscreen. Public
+> The original `html2canvas` Full Page (`content/fullpage.ts`, `offscreen/canvas-raster.ts`,
+> `domain/fullpage-layout.ts`) was **removed**. Full Page was later **re-introduced** with a
+> different mechanism (spec/SPEC-FULLPAGE-CAPTURE.md): `tabs.captureVisibleTab` scroll+stitch
+> into an image-based PDF — `capture/capture-fullpage.ts` (orchestrator), `conversion/
+> fullpage-stitch-core.ts` (planner + stitch), and target-gated `background/direct-stitcher.ts`
+> (Firefox) / `offscreen-stitcher.ts` (Chrome). `CaptureMode = 'reader' | 'fullpage'`; Reader
+> stays the default with a page-body fallback in the offscreen. Public
 > Supernote Cloud connect is **cookie-capture** of the official login (`auth/cloud-session.ts`
 > + the `cookies` permission), not extension-side email/password. Reader extraction now runs
 > Readability in the **offscreen document** (`background/offscreen-reader.ts`), since an

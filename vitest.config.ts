@@ -31,7 +31,6 @@ export default defineConfig({
         'src/options/options.ts',
         'src/popup/popup.ts',
         'src/content/reader.ts',
-        'src/content/fullpage.ts',
       ],
       thresholds: {
         lines: 97,
