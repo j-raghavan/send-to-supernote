@@ -40,7 +40,7 @@ export async function captureReader(
   if (isEmptyReaderExtract(extract)) {
     return err({
       kind: 'empty-article',
-      message: "This page doesn't have readable content to send.",
+      message: "This page doesn't have readable content to send — try Full Page instead.",
     });
   }
 
