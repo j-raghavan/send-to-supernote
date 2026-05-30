@@ -45,3 +45,7 @@ export function noteSendFailed(reason: string): Notification {
 export function noteConversionFailed(reason: string): Notification {
   return { level: 'error', title: 'Conversion failed', message: reason };
 }
+
+export function noteCaptureFailed(reason: string): Notification {
+  return { level: 'error', title: "Couldn't capture this page", message: reason };
+}

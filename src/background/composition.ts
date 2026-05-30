@@ -30,7 +30,7 @@ import { type FeatureFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import type { CapturePort, Renderer, Stitcher } from '@shared/ports';
 import type { PageSize } from '@domain/conversion';
-import type { FullPageDriver } from '@capture/capture-fullpage';
+import { captureFullPage, type FullPageDriver } from '@capture/capture-fullpage';
 import { WebCryptoRandomSource } from './crypto';
 import { offerFallbackPrompt } from './fallback-prompt';
 import { FetchHttpClient } from './fetch-http-client';
@@ -154,13 +154,21 @@ export function buildDeps(ctx: SendContext): SendDocumentDeps {
     },
     render: { renderer: makeRenderer() },
     // Full Page (FP4-FR4): target-gated stitcher (offscreen on Chrome, direct on
-    // Firefox) + the chrome.tabs capture port + the platform driver factory. The
-    // saga's Full Page branch (Batch F) consumes these; the offscreen stitcher is
+    // Firefox) + a `capture` pre-bound to the active tab/target/driver/clock/sleep
+    // so the covered saga only hands it the page size. The offscreen stitcher is
     // referenced only via the Chrome arm of makeStitcher so Firefox tree-shakes it.
     fullpage: {
-      capture: makeFullPageCapturer(),
+      capture: (pageSize) =>
+        captureFullPage({
+          tabId: ctx.tabId,
+          capture: makeFullPageCapturer(),
+          blobs,
+          driver: makeFullPageDriver(ctx.tabId, pageSize),
+          target: __TARGET__,
+          clock,
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        }),
       stitcher: makeStitcher(),
-      makeDriver: makeFullPageDriver,
     },
     blobs,
     notifier,

@@ -16,11 +16,11 @@
  * with the job retained; other failures are surfaced (and feed the F9 fallback).
  */
 import { ok, type Result } from '@shared/result';
-import type { Badge, BlobTransfer, CapturePort, Clock, Notifier, Stitcher } from '@shared/ports';
+import type { Badge, BlobTransfer, Clock, Notifier, Stitcher } from '@shared/ports';
 import type { PageSize } from '@domain/conversion';
-import type { FullPageDriver } from '@capture/capture-fullpage';
+import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
 import { type CaptureMode } from '@domain/capture';
-import { contentTypeFor, type OutputFormat } from '@domain/conversion';
+import { contentTypeFor, DEFAULT_RENDER_OPTIONS, type OutputFormat } from '@domain/conversion';
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure, findDocumentFolderId, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
@@ -37,6 +37,7 @@ import {
   NOTE_CAPTURING,
   NOTE_CONNECT_FIRST,
   NOTE_CONVERTING,
+  noteCaptureFailed,
   noteConversionFailed,
   noteSendFailed,
   noteSent,
@@ -86,11 +87,16 @@ export interface SendDocumentDeps {
    * the composition root wires the target-gated adapters here, and the Full Page
    * branch of the saga (Batch F) consumes them. Absent for a Reader-only build
    * path or when Full Page is not exercised.
+   *
+   * A HIGH-LEVEL, trivially-fakeable contract (mirrors how `capture.extractor`
+   * and `render.renderer` are pre-bound): `capture` is pre-bound in composition
+   * to the active tab/target/driver/clock/sleep, so the covered saga only hands
+   * it the page size and consumes the `Result`. The saga never sees tabId/sleep.
    */
   fullpage?: {
-    capture: CapturePort;
+    /** Run the full-page capture (pre-bound to tabId/target/driver/clock/sleep in composition). */
+    capture: (pageSize: PageSize) => Promise<Result<FullPageResult, FullPageError>>;
     stitcher: Stitcher;
-    makeDriver: (tabId: number, pageSize: PageSize) => FullPageDriver;
   };
   blobs: BlobTransfer;
   notifier: Notifier;
@@ -183,6 +189,52 @@ export async function sendDocument(
     bytes = req.source.bytes;
     contentType = req.source.contentType;
     title = req.source.title;
+  } else if (req.mode === 'fullpage') {
+    // Full Page (FP4-FR4): scroll-capture the whole document, then stitch the
+    // tiles into an image-based PDF — no Readability reflow, no renderDocument.
+    // The collaborators are wired by composition; without them this build cannot
+    // run Full Page, so fail with an actionable message rather than crash.
+    if (deps.fullpage === undefined) {
+      await deps.notifier.notify(noteCaptureFailed('Full Page capture is unavailable.'));
+      await deps.badge.set('error');
+      return fail('capture', 'Full Page capture is unavailable', 'failed');
+    }
+
+    // capturing
+    await deps.notifier.notify(NOTE_CAPTURING);
+    const pageSize: PageSize = DEFAULT_RENDER_OPTIONS.pageSize;
+    const captured = await deps.fullpage.capture(pageSize);
+    if (!captured.ok) {
+      await deps.notifier.notify(noteCaptureFailed(captured.error.message));
+      await deps.badge.set('error');
+      return fail('capture', captured.error.message, 'failed');
+    }
+
+    // converting: stitch tiles -> PDF blob handle (image-based, never inline bytes)
+    await deps.notifier.notify(NOTE_CONVERTING);
+    const stitched = await deps.fullpage.stitcher.stitch(
+      captured.value.tiles,
+      captured.value.geometry,
+    );
+
+    // hashing: read bytes back from the stitched blob handle (same guard as reader)
+    const stored = await deps.blobs.get(stitched.handle);
+    if (stored === undefined) {
+      await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
+      await deps.badge.set('error');
+      return fail('render', 'Rendered blob missing', 'failed');
+    }
+    bytes = stored.bytes;
+    contentType = 'application/pdf';
+    // No article title for a full-page screenshot: leave it empty so the
+    // filename resolves via the <hostname>-<date> fallback (F6-AC2b).
+    title = '';
+    blobHandle = stitched.handle;
+
+    // Free the per-tile PNG handles now they're stitched into the PDF.
+    for (const t of captured.value.tiles) {
+      await deps.blobs.delete(t.handle);
+    }
   } else {
     // capturing
     await deps.notifier.notify(NOTE_CAPTURING);

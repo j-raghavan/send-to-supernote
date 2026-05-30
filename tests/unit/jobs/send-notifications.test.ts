@@ -3,6 +3,7 @@ import {
   NOTE_CAPTURING,
   NOTE_CONNECT_FIRST,
   NOTE_CONVERTING,
+  noteCaptureFailed,
   noteConversionFailed,
   noteSendFailed,
   noteSent,
@@ -36,5 +37,12 @@ describe('send notifications (F6-FR5)', () => {
     expect(noteSendFailed('apply broke').message).toBe('apply broke');
     expect(noteSendFailed('apply broke').level).toBe('error');
     expect(noteConversionFailed('render broke').title).toBe('Conversion failed');
+  });
+
+  it('the Full Page capture-failure toast is an actionable error (FP4-FR4)', () => {
+    const note = noteCaptureFailed('Could not capture the page.');
+    expect(note.level).toBe('error');
+    expect(note.title).toBe("Couldn't capture this page");
+    expect(note.message).toBe('Could not capture the page.');
   });
 });
