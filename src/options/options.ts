@@ -24,7 +24,7 @@ import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
-import { pickFolder, selectableFolders } from '@settings/pick-folder';
+import { folderKeyForTarget, pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
 import { buildOptionsView, parseFormatChange } from './options-view-model';
@@ -267,13 +267,37 @@ async function renderFolderPicker(target: 'cloud' | 'privatecloud'): Promise<voi
     list.textContent = 'Could not load folders.';
     return;
   }
+  // The folder currently saved as this target's destination, so we can show the
+  // user which one their sends go to (F7-FR2 UX). Undefined → none chosen yet, so
+  // the card's "Defaults to Document/" hint applies and nothing is highlighted.
+  const selectedId = await store.get<string>(folderKeyForTarget(target));
   list.replaceChildren();
+
+  // Exactly one button carries the selected styling at a time; clicking re-marks
+  // immediately so the choice is visible without a reload.
+  const markSelected = (chosen: HTMLButtonElement): void => {
+    for (const btn of list.querySelectorAll('button')) {
+      const isChosen = btn === chosen;
+      btn.classList.toggle('is-selected', isChosen);
+      if (isChosen) {
+        btn.setAttribute('aria-current', 'true');
+      } else {
+        btn.removeAttribute('aria-current');
+      }
+    }
+  };
+
   for (const folder of selectableFolders(listed.value)) {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = folder.name;
+    if (folder.id === selectedId) {
+      button.classList.add('is-selected');
+      button.setAttribute('aria-current', 'true');
+    }
     button.addEventListener('click', () => {
+      markSelected(button);
       void pickFolder(store, target, folder.id);
     });
     item.appendChild(button);
