@@ -61,13 +61,39 @@ const FIREFOX_BACKGROUND_OUTPUT = 'src/background/service-worker.js';
 function firefoxBackgroundManifestPatch(outDir: string): Plugin {
   return {
     name: 'firefox-background-manifest-patch',
-    // `writeBundle` runs after the plugin's own `generateBundle`/emit has flushed
-    // `manifest.json` to disk, so we read-modify-write the final file.
+    // `writeBundle` runs after the plugin's own emit has flushed `manifest.json`,
+    // so we read-modify-write the final file (and we get the `bundle` to inspect).
+    //
+    // CRITICAL (MV3 listener registration): `additionalInputs.scripts` emits the
+    // background as an async IIFE LOADER —
+    //   (async()=>{await import(getURL("…service-worker-<hash>.js"))})()
+    // — which `import()`s the real module. That defers onMessage/cookies/tabs
+    // listener registration to a microtask AFTER the event page is considered
+    // "ready", so the first popup message ("connect-cloud") races ahead of the
+    // listener → "Could not establish connection. Receiving end does not exist."
+    // MV3 requires listeners to register SYNCHRONOUSLY at top level. So we point
+    // `background.scripts` at the REAL module (the loader's dynamic import target)
+    // — loaded directly, its top-level code registers the listeners during module
+    // evaluation, before any event is dispatched. The unused loader file is inert.
     async writeBundle() {
+      // Read the emitted loader and extract the real module it imports — robust
+      // across bundlers (Vite 8 uses Rolldown, whose chunk metadata differs from
+      // Rollup's, so we parse the loader's `getURL("…")` argument rather than rely
+      // on `bundle.dynamicImports`).
+      const loaderPath = join(outDir, FIREFOX_BACKGROUND_OUTPUT);
+      const loaderSrc = await readFile(loaderPath, 'utf8');
+      const realModule = /getURL\(\s*["']([^"']+)["']\s*\)/.exec(loaderSrc)?.[1];
+      if (realModule === undefined) {
+        // The plugin's loader shape changed — fail loudly rather than ship a
+        // background whose listeners register late.
+        throw new Error(
+          `firefox-background-manifest-patch: could not extract the real background module from ${FIREFOX_BACKGROUND_OUTPUT}`,
+        );
+      }
       const manifestPath = join(outDir, 'manifest.json');
       const raw = await readFile(manifestPath, 'utf8');
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      parsed.background = { scripts: [FIREFOX_BACKGROUND_OUTPUT], type: 'module' };
+      parsed.background = { scripts: [realModule], type: 'module' };
       await writeFile(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
     },
   };
