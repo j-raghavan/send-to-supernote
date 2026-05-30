@@ -28,7 +28,9 @@ import { resolveDelivery, type PrivateTargetConfig } from '@delivery/resolve-tar
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { type FeatureFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
-import type { Renderer } from '@shared/ports';
+import type { CapturePort, Renderer, Stitcher } from '@shared/ports';
+import type { PageSize } from '@domain/conversion';
+import type { FullPageDriver } from '@capture/capture-fullpage';
 import { WebCryptoRandomSource } from './crypto';
 import { offerFallbackPrompt } from './fallback-prompt';
 import { FetchHttpClient } from './fetch-http-client';
@@ -45,8 +47,11 @@ import { ChromeOptionsOpener } from './options-opener';
 import { ChromeCookieReader } from './cookie-reader';
 import { ChromeTabController } from './tab-controller';
 import { SystemClock } from './clock';
+import { OffscreenStitcher } from './offscreen-stitcher';
 import { DirectRenderer } from './direct-renderer';
 import { DirectReaderParser } from './direct-reader-parser';
+import { DirectStitcher } from './direct-stitcher';
+import { ChromeCapture, ChromeFullPageDriver } from './chrome-capture';
 import { registerOriginStripper } from './origin-stripper.firefox';
 import type { ReaderParser } from './reader-parser';
 
@@ -89,6 +94,28 @@ function makeReaderParser(): ReaderParser {
 }
 
 /**
+ * Select the Full Page stitch adapter for the build target (FP4-FR2, FP7-FR1).
+ * `OffscreenStitcher`/`ensureOffscreen()` are referenced ONLY in the Chrome arm,
+ * so Rollup tree-shakes the offscreen stitcher out of the Firefox bundle
+ * (FP7-AC1 — the offscreen-free Firefox mechanism, parity with `makeRenderer`).
+ */
+function makeStitcher(): Stitcher {
+  return __TARGET__ === 'firefox'
+    ? new DirectStitcher(blobs)
+    : new OffscreenStitcher(ensureOffscreen());
+}
+
+/** The Full Page viewport-capture adapter (chrome.tabs.captureVisibleTab). */
+function makeFullPageCapturer(): CapturePort {
+  return new ChromeCapture();
+}
+
+/** The platform-side Full Page driver (inject/scroll/restore + keep-alive). */
+function makeFullPageDriver(tabId: number, pageSize: PageSize): FullPageDriver {
+  return new ChromeFullPageDriver(tabId, pageSize);
+}
+
+/**
  * Register the Firefox-only origin-strip webRequest fallback (FF4-FR2). No-op on
  * Chrome or when the `__USE_WEBREQUEST__` build constant is false (DNR is the
  * default on both targets — FF5). The literal branch tree-shakes the listener
@@ -126,6 +153,15 @@ export function buildDeps(ctx: SendContext): SendDocumentDeps {
       extractor: new ScriptingExtractor(ctx.tabId, makeReaderParser()),
     },
     render: { renderer: makeRenderer() },
+    // Full Page (FP4-FR4): target-gated stitcher (offscreen on Chrome, direct on
+    // Firefox) + the chrome.tabs capture port + the platform driver factory. The
+    // saga's Full Page branch (Batch F) consumes these; the offscreen stitcher is
+    // referenced only via the Chrome arm of makeStitcher so Firefox tree-shakes it.
+    fullpage: {
+      capture: makeFullPageCapturer(),
+      stitcher: makeStitcher(),
+      makeDriver: makeFullPageDriver,
+    },
     blobs,
     notifier,
     badge,

@@ -16,7 +16,9 @@
  * with the job retained; other failures are surfaced (and feed the F9 fallback).
  */
 import { ok, type Result } from '@shared/result';
-import type { Badge, BlobTransfer, Clock, Notifier } from '@shared/ports';
+import type { Badge, BlobTransfer, CapturePort, Clock, Notifier, Stitcher } from '@shared/ports';
+import type { PageSize } from '@domain/conversion';
+import type { FullPageDriver } from '@capture/capture-fullpage';
 import { type CaptureMode } from '@domain/capture';
 import { contentTypeFor, type OutputFormat } from '@domain/conversion';
 import { type Target } from '@domain/settings';
@@ -79,6 +81,17 @@ export interface SendDocumentDeps {
   resolveDelivery: (target: Target) => DeliveryPort;
   capture: CaptureReaderDeps;
   render: RenderDeps;
+  /**
+   * Full Page capture/stitch collaborators (FP4-FR4). Optional in this batch:
+   * the composition root wires the target-gated adapters here, and the Full Page
+   * branch of the saga (Batch F) consumes them. Absent for a Reader-only build
+   * path or when Full Page is not exercised.
+   */
+  fullpage?: {
+    capture: CapturePort;
+    stitcher: Stitcher;
+    makeDriver: (tabId: number, pageSize: PageSize) => FullPageDriver;
+  };
   blobs: BlobTransfer;
   notifier: Notifier;
   badge: Badge;
