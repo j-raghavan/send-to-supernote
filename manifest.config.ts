@@ -38,7 +38,14 @@ export type ExtensionTarget = 'chrome' | 'firefox';
  */
 type FirefoxExtras = {
   background?: { service_worker?: string; scripts?: string[]; type?: 'module' };
-  browser_specific_settings?: { gecko: { id: string; strict_min_version?: string } };
+  browser_specific_settings?: {
+    gecko: {
+      id: string;
+      strict_min_version?: string;
+      /** AMO data-collection disclosure; `['none']` declares no data collected. */
+      data_collection_permissions?: { required: string[]; optional?: string[] };
+    };
+  };
 };
 
 export type WebExtManifest = Omit<chrome.runtime.ManifestV3, 'background'> & FirefoxExtras;
@@ -143,16 +150,19 @@ export function buildManifest(target: ExtensionTarget): WebExtManifest {
         type: 'module',
       },
       // AMO requires an explicit add-on id; pin a conservative minimum (locked).
-      // NOTE: the AMO `data_collection_permissions` disclosure is intentionally
-      // NOT declared here — that manifest key requires Firefox ~140, so at our
-      // `strict_min_version: 128.0` (ESR) it triggers a KEY_FIREFOX_UNSUPPORTED_BY_
-      // MIN_VER web-ext warning. The extension collects no data (D-3); declare
-      // `data_collection_permissions: {required:['none']}` only if/when the min
-      // version is raised to a build that supports it (AMO submission step).
+      // AMO now REQUIRES the `data_collection_permissions` disclosure on new
+      // submissions (validation fails without it), so it is declared here as
+      // `{ required: ['none'] }` — the extension collects no data (D-3). The key
+      // is only understood by Firefox ~140+, so at our `strict_min_version: 128.0`
+      // (ESR) `web-ext lint` emits an informational KEY_FIREFOX_UNSUPPORTED_BY_MIN_
+      // VER *warning* (not an error — CI/lint stay green); Firefox 128–139 simply
+      // ignore the unknown key. We keep 128.0 to retain ESR support rather than
+      // raising the floor just to silence the warning.
       browser_specific_settings: {
         gecko: {
           id: 'send-to-supernote@j-raghavan',
           strict_min_version: '128.0',
+          data_collection_permissions: { required: ['none'] },
         },
       },
     };

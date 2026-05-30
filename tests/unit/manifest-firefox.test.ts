@@ -65,6 +65,13 @@ describe('buildManifest("firefox") browser_specific_settings (FF5-FR1)', () => {
   it('pins the conservative strict_min_version', () => {
     expect(firefox.browser_specific_settings?.gecko.strict_min_version).toBe('128.0');
   });
+
+  it('declares the AMO-required data_collection_permissions as none (no data collected)', () => {
+    // AMO validation rejects new submissions without this key; we collect no data.
+    expect(firefox.browser_specific_settings?.gecko.data_collection_permissions).toEqual({
+      required: ['none'],
+    });
+  });
 });
 
 describe('buildManifest("firefox") host permissions (FF5-FR2)', () => {
