@@ -7,8 +7,11 @@
  * (empty-content guard, clone-only) live in the capture use cases.
  */
 
-/** Capture mode. Reader extraction is the only mode (Full Page was removed). */
-export type CaptureMode = 'reader';
+/**
+ * Capture mode (FP1-FR1). Reader runs Readability reflow; Full Page screenshots
+ * the whole scrollable document as-is (scroll + stitch → image-based PDF).
+ */
+export type CaptureMode = 'reader' | 'fullpage';
 
 /** Raw result of running Readability on a document clone (F3-FR1). */
 export interface ReaderExtract {
