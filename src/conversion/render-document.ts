@@ -11,7 +11,12 @@
 import { err, ok, type Result } from '@shared/result';
 import type { Renderer, RenderedBlob } from '@shared/ports';
 import type { CapturedDocument } from '@domain/capture';
-import { type OutputFormat, type PageSize, resolveRenderOptions } from '@domain/conversion';
+import {
+  type OutputFormat,
+  type PageSize,
+  type RenderOptions,
+  resolveRenderOptions,
+} from '@domain/conversion';
 import { type ImageFetcher, inlineImages } from './inline-images';
 
 export type ConversionErrorKind = 'render-failed';
@@ -42,7 +47,13 @@ export async function renderDocument(
   deps: RenderDeps,
   params: RenderParams,
 ): Promise<Result<RenderedBlob, ConversionError>> {
-  const options = resolveRenderOptions(params.format, params.pageSize);
+  // Plumb the captured document's REAL title to the renderer so the EPUB heading
+  // is the article/page title — never the render context's own document.title
+  // (which would leak "Send to Supernote — Offscreen Renderer" into the output).
+  const options: RenderOptions = {
+    ...resolveRenderOptions(params.format, params.pageSize),
+    title: params.document.title,
+  };
 
   const html = deps.fetchImage
     ? (await inlineImages(params.document.html, deps.fetchImage)).html

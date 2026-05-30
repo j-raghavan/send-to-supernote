@@ -38,6 +38,7 @@ import { titleFromHtml, renderToBytes, parseReader } from '@conversion/render-pa
 
 describe('titleFromHtml', () => {
   afterEach(() => {
+    // Set a renderer-context title to PROVE titleFromHtml never leaks it.
     document.title = '';
   });
 
@@ -45,18 +46,16 @@ describe('titleFromHtml', () => {
     expect(titleFromHtml('<h1>  X  </h1>')).toBe('X');
   });
 
-  it('falls back to document.title when there is no <h1>', () => {
-    document.title = 'Doc Title';
-    expect(titleFromHtml('<p>no heading here</p>')).toBe('Doc Title');
+  it("falls back to 'Document' when there is no <h1> (never the renderer's document.title)", () => {
+    // Regression: titleFromHtml used to return document.title here, leaking
+    // "Send to Supernote — Offscreen Renderer" into the EPUB. It must not.
+    document.title = 'Send to Supernote — Offscreen Renderer';
+    expect(titleFromHtml('<p>no heading here</p>')).toBe('Document');
   });
 
-  it('uses document.title (empty string) when neither an <h1> nor a title is set', () => {
-    document.title = '';
-    // document.title is always a string, so the value returned is whatever
-    // `document.title` holds — here the empty string. (See COVERAGE NOTE: the
-    // trailing `?? 'Document'` is unreachable because document.title is never
-    // null/undefined.)
-    expect(titleFromHtml('<p>still no heading</p>')).toBe('');
+  it("falls back to 'Document' when the <h1> is empty/whitespace", () => {
+    document.title = 'Send to Supernote — Offscreen Renderer';
+    expect(titleFromHtml('<h1>   </h1><p>body</p>')).toBe('Document');
   });
 });
 
@@ -78,10 +77,26 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
       bodyHtml: string;
       identifier: string;
     };
-    expect(input.title).toBe('My Title'); // fed by titleFromHtml(html)
+    expect(input.title).toBe('My Title'); // fed by titleFromHtml(html) when no options.title
     expect(input.bodyHtml).toBe(html);
     expect(input.identifier).toMatch(/^urn:uuid:[0-9a-f-]{36}$/i);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('prefers the real options.title over the content <h1> for the EPUB', async () => {
+    const html = '<h1>Heading In Content</h1><p>body</p>';
+    await renderToBytes(html, { ...resolveRenderOptions('epub'), title: '  Real Article Title  ' });
+
+    const input = renderEpub.mock.calls[0]![0] as { title: string };
+    expect(input.title).toBe('Real Article Title'); // trimmed options.title wins
+  });
+
+  it('falls back to titleFromHtml when options.title is blank', async () => {
+    const html = '<h1>From Content</h1>';
+    await renderToBytes(html, { ...resolveRenderOptions('epub'), title: '   ' });
+
+    const input = renderEpub.mock.calls[0]![0] as { title: string };
+    expect(input.title).toBe('From Content');
   });
 
   it('routes PDF to renderHtmlToPdf(html, pageSize)', async () => {

@@ -20,25 +20,32 @@ import { extractReaderFromDocument } from '../content/reader';
 import { renderHtmlToPdf } from '../offscreen/pdf-renderer';
 import { renderEpub } from '../offscreen/epub-renderer';
 
-/** Derive a title for EPUB from the HTML (first <h1>, else the document title). */
+/**
+ * Derive an EPUB title from the content's first <h1>, else the generic
+ * 'Document'. It deliberately does NOT consult the render context's
+ * `document.title` — in the offscreen doc / event page that is the renderer's
+ * own page title ("Send to Supernote — Offscreen Renderer"), which must never
+ * leak into the output. The real title is plumbed via `RenderOptions.title`
+ * (see `renderToBytes`); this is only the no-title fallback.
+ */
 export function titleFromHtml(html: string): string {
   const container = document.createElement('div');
   container.innerHTML = html;
-  const h1 = container.querySelector('h1');
-  // `document.title` is a (possibly empty) string, never nullish, so it is the
-  // terminal fallback — a further `?? 'Document'` would be dead code.
-  return h1?.textContent?.trim() ?? document.title;
+  const heading = container.querySelector('h1')?.textContent?.trim();
+  return heading && heading.length > 0 ? heading : 'Document';
 }
 
 /**
  * Render captured HTML to PDF/EPUB bytes via the pure `renderRoute` decision:
- * EPUB goes through the jszip builder (titled via `titleFromHtml`, with a fresh
- * `urn:uuid` identifier); everything else lays the HTML out as a jsPDF PDF.
+ * EPUB goes through the jszip builder (titled from the captured document's real
+ * title when available, else derived from the content), with a fresh `urn:uuid`
+ * identifier; everything else lays the HTML out as a jsPDF PDF.
  */
 export async function renderToBytes(html: string, options: RenderOptions): Promise<Uint8Array> {
   if (renderRoute(options) === 'epub') {
+    const provided = options.title?.trim();
     return renderEpub({
-      title: titleFromHtml(html),
+      title: provided && provided.length > 0 ? provided : titleFromHtml(html),
       bodyHtml: html,
       identifier: `urn:uuid:${crypto.randomUUID()}`,
     });
