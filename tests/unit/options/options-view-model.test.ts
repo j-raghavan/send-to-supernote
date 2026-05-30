@@ -27,6 +27,14 @@ describe('buildOptionsView (F7-FR1)', () => {
     expect(view.canPickCloudFolder).toBe(true);
   });
 
+  it('reflects the settings defaultMode in the view (FP1-FR2 / FP8-FR1)', () => {
+    const view = buildOptionsView('connected', 'me@x.com', {
+      ...settings,
+      defaultMode: 'fullpage',
+    });
+    expect(view.defaultMode).toBe('fullpage');
+  });
+
   it('shows a generic connected status when no email is known (cookie-capture cloud connect)', () => {
     const view = buildOptionsView('connected', undefined, settings);
     expect(view.connected).toBe(true);
@@ -57,6 +65,7 @@ describe('buildOptionsView (F7-FR1)', () => {
 describe('control change validation (F7-FR1)', () => {
   it('accepts valid mode/format/target values', () => {
     expect(parseModeChange('reader')).toBe('reader');
+    expect(parseModeChange('fullpage')).toBe('fullpage');
     expect(parseFormatChange('epub')).toBe('epub');
     expect(parseTargetChange('privatecloud')).toBe('privatecloud');
   });

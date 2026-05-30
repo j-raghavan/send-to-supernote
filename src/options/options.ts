@@ -27,7 +27,8 @@ import { listFolders } from '@settings/list-folders';
 import { folderKeyForTarget, pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
-import { buildOptionsView, parseFormatChange } from './options-view-model';
+import { buildOptionsView, parseFormatChange, parseModeChange } from './options-view-model';
+import { captureModeDescription } from '@capture/copy';
 import { api } from '@shared/browser-api';
 
 const store = new ChromeStorageLocal();
@@ -76,6 +77,24 @@ async function render(): Promise<void> {
         : pcSession === 'expired'
           ? 'Session expired — reconnect'
           : 'Not connected';
+  }
+
+  const mode = byId<HTMLSelectElement>('default-mode');
+  const modeHint = byId('default-mode-hint');
+  if (mode) {
+    mode.value = view.defaultMode;
+    if (modeHint) {
+      modeHint.textContent = captureModeDescription(view.defaultMode);
+    }
+    mode.addEventListener('change', () => {
+      const parsed = parseModeChange(mode.value);
+      if (parsed) {
+        void settings.setDefaultMode(parsed);
+        if (modeHint) {
+          modeHint.textContent = captureModeDescription(parsed);
+        }
+      }
+    });
   }
 
   const format = byId<HTMLSelectElement>('default-format');
