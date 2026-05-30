@@ -49,7 +49,7 @@ This spec defines eight features (FP1–FP8) with Functional Requirements (FR), 
 | **Paginate** | Slicing the stitched tall image into page-height raster bands, each placed on a PDF page via `jsPDF.addImage` (NOT `jsPDF.html`). |
 | **`captureVisibleTab`** | The WebExtension API that returns a data-URL screenshot of the **visible viewport only** (Chrome + Firefox). Rate-limited (~2/sec documented on Chrome; treat as bounded and unknown on Firefox — FP3-FR2). |
 | **Keep-alive** | A mechanism (e.g. a long-lived `runtime.connect` Port from the injected orchestrator) that holds the background (SW/event page) alive across the multi-second capture so it doesn't idle-unload mid-run (FP3-FR5). |
-| **Fixed/sticky neutralization** | Temporarily setting `position: static` on `fixed`/`sticky` elements during capture so a header/cookie-banner doesn't repeat on every tile; restored afterwards. |
+| **Fixed/sticky neutralization** | Temporarily setting `position: absolute` on `fixed`/`sticky` elements during capture (preserves their geometry better than `static`) so a header/cookie-banner doesn't repeat on every tile; restored afterwards via a recorded inline-style stamp. |
 
 ---
 
@@ -122,7 +122,7 @@ notify + badge (UNCHANGED — F6)
 
 ### FP1 — Full Page capture mode + UI
 - **FP1-FR1.** Revive `CaptureMode = 'reader' | 'fullpage'` (domain) and `settings.defaultMode` (`'reader'` default — Reader stays the recommended default).
-- **FP1-FR2.** The popup offers a Full Page option for a one-off send; a context-menu item *Send to Supernote (Full Page)* is added alongside Reader.
+- **FP1-FR2.** The **Options/Settings page** offers a "Default capture mode" picker (Reader / Full Page) that sets `settings.defaultMode` (the toolbar Send then uses it); a context-menu item *Send to Supernote (Full Page)* is added alongside Reader for a per-send override. (Decision: the mode lives in Settings, not a separate popup control — the popup stays a one-click Send.)
 - **FP1-FR3.** Full Page forces `format: 'pdf'` (a screenshot has no reflowable text). Enforce this in `resolve-send-request`/the saga — **not only the UI** — so a stored `settings.defaultFormat='epub'` cannot leak EPUB into a Full Page send. Concretely in `resolveSendRequest`:
   ```ts
   const mode = overrides.mode ?? settings.defaultMode;
@@ -136,7 +136,7 @@ notify + badge (UNCHANGED — F6)
 
 ### FP2 — Scroll orchestration content script (no persistent mutation)
 - **FP2-FR1.** A self-contained `scripting.executeScript` function measures `document.documentElement.scrollHeight`, `clientHeight`/`innerHeight`, `devicePixelRatio`, and the scroll width, and computes the ordered scroll offsets.
-- **FP2-FR2.** It neutralizes `position: fixed` and `position: sticky` elements (set `position: static`) before capture so headers/banners don't repeat on each tile, recording originals.
+- **FP2-FR2.** It neutralizes `position: fixed` and `position: sticky` elements (set `position: absolute` — preserves geometry better than `static`) before capture so headers/banners don't repeat on each tile, recording each original inline `position` in a restore-stamp attribute (idempotent).
 - **FP2-FR3.** At each step it scrolls, awaits a paint (`requestAnimationFrame`) and a short lazy-load settle, then signals readiness to the background via **`runtime.sendMessage`** (the injected function runs in the isolated content world where `chrome`/`browser.runtime.sendMessage` is available) — **not** `window.postMessage`. The background drives the loop and performs the capture per step.
 - **FP2-FR4.** It **restores** the original scroll position and all mutated styles in a `finally` — even on error/timeout (capture must never leave the user's page altered — the I-4 principle).
 - **FP2-AC1.** Given a multi-screen page, the computed offsets cover `[0 … totalHeight]` with no gap and a clamped final step.
@@ -200,7 +200,7 @@ notify + badge (UNCHANGED — F6)
 ## Edge Cases
 - **PDF tab + Full Page selected:** `probePdf` runs **before** mode resolution and sets `req.source` for a PDF tab (`service-worker.ts`), so the saga's source branch pass-throughs the raw PDF and **Full Page does not scroll-capture**. This is intended (the page already *is* a faithful PDF); FP1-AC1 is therefore scoped to HTML pages. Documented so "Full Page" isn't read as "always tiles."
 - **Background unloads mid-capture:** a long capture (throttle × steps) can outlive the idle SW/event-page lifetime; held alive by FP3-FR5 and bounded by the FP6-FR2 timeout. This is the same **event-page-lifetime risk the Firefox port already flags for long renders** (the `alarms`/keep-alive note in SPEC-FIREFOX-SUPPORT.md, FF7 — that spec is local/un-tracked, so this bullet states the concern directly rather than relying on the cross-reference).
-- **Fixed/sticky headers, cookie banners:** neutralized to `position: static` during capture (appear once at top), restored after — a deliberate tradeoff vs repeating on every tile.
+- **Fixed/sticky headers, cookie banners:** neutralized to `position: absolute` during capture (appear once at top), restored after — a deliberate tradeoff vs repeating on every tile.
 - **Lazy-loaded images:** the scroll-through triggers them; a per-step settle waits before capture; very slow loads may still miss — bounded by the timeout.
 - **Very tall pages:** capped (FP6-FR1) and band-stitched (FP4-FR3) to respect canvas limits; user warned on truncation.
 - **Non-scrolling / inner-scroll pages (SPAs):** detected (no scroll progress) → single-viewport fallback (FP6-FR3), no infinite loop.
@@ -258,6 +258,7 @@ notify + badge (UNCHANGED — F6)
 - **RP-3: capture quota latency.** Long pages take seconds. *Mitigation:* throttle + progress. Acceptable?
 - **RP-4: inner-scroll SPAs.** `scrollTo` may not move the document. *Mitigation:* non-scroll detection → single-viewport fallback (FP6-FR3). **Open:** attempt to detect and scroll the dominant inner scroll container, or leave as single-viewport?
 - **RP-5: image-based PDF (no selectable text).** By design for "as-is". Confirm this matches the user's expectation (Reader remains the text-first option).
+- **RP-6: page size is `a4`-only (v1).** The stitch core fully supports Letter, but the saga passes `DEFAULT_RENDER_OPTIONS.pageSize` (`'a4'`) because no per-send page size is plumbed into `SendRequest` (Reader's PDF is the same). *Mitigation/follow-up:* add a page-size setting if Letter output is wanted; not a v1 blocker.
 
 ## Sources
 - [MDN — `tabs.captureVisibleTab` (viewport-only)](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/captureVisibleTab)
