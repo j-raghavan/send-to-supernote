@@ -42,11 +42,19 @@ bridge** (no Dropbox/Drive).
   is the reverse-engineered `apply → PUT bytes to the pre-signed S3 URL
 Supernote's API issues → finish`. Serves all users.
 - **Supernote Private Cloud (alternative, self-hosted)** — upload to _your own_
-  server at a base URL you configure (e.g. `http://192.168.x.x:8080` on a LAN, or
+  server at a base URL you configure (e.g. `http://192.168.x.x:19072` on a LAN, or
   an HTTPS reverse-proxy host). The flow differs only in the upload step:
   `apply (with timestamp + nonce headers) → multipart POST of the file to the
 upload URL the apply step returns (commonly /api/oss/upload — never hardcoded)
 → finish`. Uses the same login as public Cloud and stores a **JWT only**.
+
+  > **Reachability:** the server must be reachable over plain `http://<ip>:19072`
+  > (the stock Docker port — the extension shows an unencrypted-on-LAN warning) **or**
+  > HTTPS with a certificate your browser trusts. A browser/extension `fetch` cannot
+  > bypass TLS validation, so a **self-signed** certificate will fail until you import
+  > it into your OS/browser trust store; alternatively use a CA-trusted cert
+  > (e.g. Let's Encrypt via a real domain). Pointing `https://` at the HTTP-only
+  > port 19072 will fail the TLS handshake — use `http://…:19072` there.
 
 A send is "done" **only after `finish` reports success**; an applied-but-not-
 finished upload is treated as a failure.

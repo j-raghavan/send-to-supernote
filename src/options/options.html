@@ -73,8 +73,13 @@
               id="pc-base-url"
               class="input"
               type="url"
-              placeholder="https://supernote.home.lan"
+              placeholder="http://192.168.x.x:19072"
             />
+            <p class="muted">
+              Use <code>http://&lt;your-server-ip&gt;:19072</code>, or HTTPS with a certificate your
+              browser trusts — a self-signed certificate must be imported into your OS/browser trust
+              store first.
+            </p>
             <div class="row">
               <input
                 id="pc-email"
@@ -93,6 +98,8 @@
             </div>
             <p id="password-note" class="muted"></p>
             <p id="pc-http-warning" class="warning" hidden></p>
+            <p id="pc-error" class="error" hidden></p>
+            <p id="pc-status" class="status" hidden></p>
             <div class="row">
               <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
               <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>

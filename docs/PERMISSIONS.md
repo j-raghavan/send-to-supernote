@@ -32,8 +32,8 @@ are **no unused permissions**. The extension requests **no `debugger`**, **no
 
 | Host pattern | Why it is needed | Feature |
 |---|---|---|
-| `https://cloud.supernote.com/*` | Public Supernote Cloud API (login / apply / list / finish). | F2, F5 |
-| `https://viewer.supernote.com/*` | The alternate public-API host; the F5-FR1 spike pins which one the account uses, so both are declared statically. | F5-FR1 (R-8) |
+| `https://supernote.com/*` | The `x-access-token` session cookie is set on the APEX domain (`.supernote.com`); `chrome.cookies` gates reads on the cookie's own url (`https://supernote.com/`), so the apex must be granted or Cloud connect silently fails (the login tab never closes). | F2 (Cloud connect) |
+| `https://*.supernote.com/*` | Public Supernote Cloud API across subdomains — login / apply / list / finish on `cloud.`/`viewer.supernote.com` (the F5-FR1 spike pins which host the account uses) — and reading the `.supernote.com` session cookie on those subdomains. | F2, F5, F5-FR1 (R-8) |
 | `https://*.amazonaws.com/*` | `PUT` the file bytes to the pre-signed S3 URL that Supernote's API issues (Ratta's own storage). Narrowed as far as the spike allows. | F5-FR2 |
 
 No `<all_urls>` host permission is requested.

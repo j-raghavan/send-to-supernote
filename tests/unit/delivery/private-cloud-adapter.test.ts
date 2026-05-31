@@ -155,6 +155,20 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     }
   });
 
+  it('an HTTPS send-time connection failure carries cert + http://<host>:19072 guidance (connect/send parity)', async () => {
+    http.on(PC_APPLY_PATH, () => {
+      throw new Error('TLS handshake failed');
+    });
+    const httpsDeps = { ...deps(http), baseUrl: 'https://nas.local:8443' };
+    const result = await uploadToPrivateCloud(httpsDeps, input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('connection');
+      expect(result.error.message.toLowerCase()).toContain('certificate');
+      expect(result.error.message).toContain('http://nas.local:19072');
+    }
+  });
+
   it('classifies a thrown upload (oss) request as a connection failure', async () => {
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: OSS_PATH } })

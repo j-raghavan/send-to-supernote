@@ -37,6 +37,7 @@ import {
   NOTE_CAPTURING,
   NOTE_CONNECT_FIRST,
   NOTE_CONVERTING,
+  NOTE_NO_DESTINATION_FOLDER,
   noteCaptureFailed,
   noteConversionFailed,
   noteFullPageTruncated,
@@ -288,6 +289,18 @@ export async function sendDocument(
 
   // name: resolve destination folder + de-dupe against a REAL listing (F6-FR3/c)
   const destination = await resolveDestination(port, req.folderId);
+  if (destination === undefined) {
+    // No real folder resolvable. NEVER upload to the root directory — Supernote
+    // rejects it ("Cannot be operated from the root directory!"); ask the user to
+    // pick a folder instead of attempting a doomed upload. Free the rendered blob
+    // (this is a config issue, not a retryable auth failure).
+    await deps.notifier.notify(NOTE_NO_DESTINATION_FOLDER);
+    await deps.badge.set('error');
+    if (blobHandle !== undefined) {
+      await cleanupBlob(deps, blobHandle);
+    }
+    return fail('delivery', NOTE_NO_DESTINATION_FOLDER.message, 'failed');
+  }
   const fileName = await resolveFileName(deps, req, port, destination, title);
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
@@ -309,19 +322,21 @@ export async function sendDocument(
   return ok({ fileName: uploaded.value.fileName, state: finalState as 'done' });
 }
 
-/** Resolve the destination folder id: explicit choice, else the Document/ folder. */
-async function resolveDestination(port: DeliveryPort, folderId?: string): Promise<string> {
+/**
+ * Resolve the destination folder id: an explicit choice, else the `Document/`
+ * folder at root. Returns `undefined` when no real folder can be resolved (no
+ * folder chosen AND the root listing failed OR has no Document folder) — the
+ * caller must NOT upload to root, which Supernote always rejects.
+ */
+async function resolveDestination(
+  port: DeliveryPort,
+  folderId?: string,
+): Promise<string | undefined> {
   if (folderId !== undefined && folderId.length > 0) {
     return folderId;
   }
   const root = await port.listFolders(ROOT_DIRECTORY_ID);
-  if (root.ok) {
-    const doc = findDocumentFolderId(root.value);
-    if (doc !== undefined) {
-      return doc;
-    }
-  }
-  return ROOT_DIRECTORY_ID;
+  return root.ok ? findDocumentFolderId(root.value) : undefined;
 }
 
 /** Build the filename, de-duped against the destination's real listing (F6-FR3). */
@@ -389,20 +404,25 @@ async function finishDeliveryFailure(
   ) {
     const privatePort = deps.fallback.privatePort();
     const destination = await resolveDestination(privatePort, deps.fallback.privateFolderId);
-    const fb = await offerPrivateCloudFallback(
-      { privatePort: () => privatePort, offer: deps.fallback.offer },
-      { ...uploadInput, directoryId: destination },
-    );
-    if (fb.kind === 'sent') {
-      if (blobHandle !== undefined) {
-        await deps.blobs.delete(blobHandle);
+    // Only offer the fallback if a real Private Cloud folder resolves — never
+    // re-send to the (always-rejected) root directory; otherwise fall through to
+    // the generic failure below.
+    if (destination !== undefined) {
+      const fb = await offerPrivateCloudFallback(
+        { privatePort: () => privatePort, offer: deps.fallback.offer },
+        { ...uploadInput, directoryId: destination },
+      );
+      if (fb.kind === 'sent') {
+        if (blobHandle !== undefined) {
+          await deps.blobs.delete(blobHandle);
+        }
+        await deps.notifier.notify(noteSent(fb.result.fileName));
+        await deps.badge.set('idle');
+        return ok({
+          fileName: fb.result.fileName,
+          state: completeFinish('finishing', true) as 'done',
+        });
       }
-      await deps.notifier.notify(noteSent(fb.result.fileName));
-      await deps.badge.set('idle');
-      return ok({
-        fileName: fb.result.fileName,
-        state: completeFinish('finishing', true) as 'done',
-      });
     }
   }
 

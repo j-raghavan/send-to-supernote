@@ -286,6 +286,11 @@ describe('folder normalization (F5-FR3 / F7-FR2)', () => {
     ).toBe('7');
   });
 
+  it('matches the Document folder case-insensitively', () => {
+    expect(findDocumentFolderId([{ id: '8', name: 'document', isFolder: true }])).toBe('8');
+    expect(findDocumentFolderId([{ id: '9', name: 'DOCUMENT', isFolder: true }])).toBe('9');
+  });
+
   it('ignores a non-folder named Document', () => {
     expect(findDocumentFolderId([{ id: '5', name: 'Document', isFolder: false }])).toBeUndefined();
   });

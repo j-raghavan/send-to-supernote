@@ -38,6 +38,18 @@ export const NOTE_CONNECT_FIRST: Notification = {
   message: 'Connect your Supernote account in Options.',
 };
 
+/**
+ * Shown when no destination folder can be resolved. Supernote rejects uploads to
+ * the root directory ("Cannot be operated from the root directory!"), so rather
+ * than attempt a doomed root upload we ask the user to pick a folder in Options.
+ */
+export const NOTE_NO_DESTINATION_FOLDER: Notification = {
+  level: 'error',
+  title: 'Choose a folder',
+  message:
+    "Couldn't find a destination folder on your Supernote. Open Options and pick one to send to.",
+};
+
 export function noteSendFailed(reason: string): Notification {
   return { level: 'error', title: 'Send failed', message: reason };
 }

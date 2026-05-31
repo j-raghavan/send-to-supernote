@@ -120,13 +120,21 @@ export function buildManifest(target: ExtensionTarget): WebExtManifest {
       rule_resources: [{ id: 'supernote_headers', enabled: true, path: 'dnr-rules.json' }],
     },
 
-    // F1-FR3: both candidate public-API hosts are declared statically (the
-    // F5-FR1 spike picks which one the account uses at runtime); Ratta's S3 host
-    // is included for the pre-signed PUT, narrowed as far as the spike allows.
-    // NO `<all_urls>`.
+    // F1-FR3: Supernote hosts + Ratta's S3 host (pre-signed PUT). NO `<all_urls>`.
+    //
+    // The session cookie `x-access-token` is set on the APEX domain
+    // (`.supernote.com`), and `chrome.cookies` gates reads on the cookie's OWN
+    // url — for an apex cookie that is `https://supernote.com/`. Granting only
+    // `cloud.`/`viewer.supernote.com` made the cookie INVISIBLE to the capture
+    // flow (login tab never closed; popup kept saying "Connect"). So we grant the
+    // apex AND the subdomain wildcard: the apex makes the cookie readable, and
+    // `*.supernote.com` keeps the file API host (`viewer.`) and any other
+    // subdomain covered. `*.supernote.com` does NOT match the bare apex in Chrome,
+    // so the apex is listed explicitly. Shared base → identical on Chrome and
+    // Firefox (cannot drift).
     host_permissions: [
-      'https://cloud.supernote.com/*',
-      'https://viewer.supernote.com/*',
+      'https://supernote.com/*',
+      'https://*.supernote.com/*',
       'https://*.amazonaws.com/*',
     ],
 

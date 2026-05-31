@@ -49,3 +49,35 @@ export function validateBaseUrl(
 export function httpWarningFor(base: ValidBaseUrl): string | undefined {
   return base.isHttp ? HTTP_OVER_LAN_WARNING : undefined;
 }
+
+/** Host (without scheme/port) of a base URL, for an `http://host:19072` suggestion. */
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return '<your-server-ip>';
+  }
+}
+
+/**
+ * Actionable message when a Private Cloud connection/upload FAILS AT THE NETWORK
+ * LAYER (the request never completes — no HTTP status — e.g.
+ * `TypeError: NetworkError` / "CORS request did not succeed"). Distinct from a
+ * login rejection (wrong password), which returns a real status + its own message.
+ *
+ * A failed `fetch` does not tell us WHY (server down, wrong address/port,
+ * firewall, or — for HTTPS — an untrusted certificate), so we LEAD WITH GENERIC
+ * REACHABILITY for every scheme and only APPEND the HTTPS-specific notes when the
+ * URL is HTTPS: a browser/extension `fetch` cannot bypass an untrusted
+ * (self-signed) cert, and the stock Private Cloud serves plain HTTP on port
+ * 19072. The host from `baseUrl` is substituted into the http:// suggestion.
+ * Pure + covered; used by the SW (popup connect), the Options connect, and the
+ * send-time adapter so connect and send stay equally diagnosable.
+ */
+export function privateCloudNetworkErrorHint(baseUrl: string): string {
+  const base = `Couldn't reach your Private Cloud server at ${baseUrl}. Check the server is running and the address and port are correct, and that it's reachable from this device.`;
+  if (baseUrl.toLowerCase().startsWith('https://')) {
+    return `${base} If you're using HTTPS, your browser must also trust the server's certificate — a self-signed certificate must be imported into your OS/browser trust store (or use a CA-trusted cert). For a stock install, the server serves plain HTTP on port 19072 — try http://${hostOf(baseUrl)}:19072.`;
+  }
+  return base;
+}

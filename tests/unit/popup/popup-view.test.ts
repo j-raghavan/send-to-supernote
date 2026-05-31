@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildPopupView, popupSendRequest } from '../../../src/popup/popup-view';
+import {
+  buildPopupView,
+  connectFailureMessage,
+  popupSendRequest,
+} from '../../../src/popup/popup-view';
 import type { Settings } from '@domain/settings';
 
 const settings: Settings = {
@@ -59,5 +63,31 @@ describe('popupSendRequest (F6-FR6 one-off pick)', () => {
     const req = popupSendRequest(settings, { hostname: 'example.com' }, {});
     expect(req.mode).toBe('reader');
     expect(req.target).toBe('cloud');
+  });
+});
+
+describe('connectFailureMessage', () => {
+  it('frames ONLY a login rejection (kind: auth) as a sign-in failure', () => {
+    expect(connectFailureMessage({ kind: 'auth', error: 'invalid credentials' })).toBe(
+      'Could not sign in: invalid credentials',
+    );
+    expect(connectFailureMessage({ kind: 'auth' })).toBe('Could not sign in: unknown error');
+  });
+
+  it('shows a network failure hint as-is (no "Could not sign in" framing)', () => {
+    const msg = connectFailureMessage({
+      kind: 'network',
+      error: "Couldn't reach your server at https://x.",
+    });
+    expect(msg).toBe("Couldn't reach your server at https://x.");
+    expect(msg).not.toContain('Could not sign in');
+  });
+
+  it('shows an infrastructure failure (no kind) as-is — never mis-framed as sign-in', () => {
+    // e.g. the SW didn't respond: a standalone message, not a login rejection.
+    expect(connectFailureMessage({ error: 'Background service worker did not respond.' })).toBe(
+      'Background service worker did not respond.',
+    );
+    expect(connectFailureMessage({})).toBe("Couldn't reach your Private Cloud server.");
   });
 });

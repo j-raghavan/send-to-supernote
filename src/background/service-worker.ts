@@ -23,6 +23,7 @@ import {
 } from '@auth/cloud-session';
 import { reflectConnectionState } from '@auth/connection-state';
 import type { Target } from '@domain/settings';
+import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
 import { normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import { api } from '@shared/browser-api';
@@ -243,7 +244,7 @@ interface PrivateConnectMessage {
  */
 async function handlePrivateConnect(
   msg: PrivateConnectMessage,
-): Promise<{ ok: boolean; error?: string; detail?: string }> {
+): Promise<{ ok: boolean; error?: string; detail?: string; kind?: 'network' | 'auth' }> {
   if (!msg.baseUrl) {
     return { ok: false, error: 'Missing Private Cloud server URL.' };
   }
@@ -253,7 +254,15 @@ async function handlePrivateConnect(
       { baseUrl: msg.baseUrl, account: msg.account, password: msg.password },
     );
     if (!result.ok) {
-      return { ok: false, error: result.error.message, detail: formatLoginError(result.error) };
+      // `auth`: the request reached the login endpoint and was rejected (wrong
+      // password / nonce). Explicit so the popup frames it as a sign-in failure
+      // rather than relying on the absence of `kind: 'network'`.
+      return {
+        ok: false,
+        kind: 'auth',
+        error: result.error.message,
+        detail: formatLoginError(result.error),
+      };
     }
     await settingsStore.setTarget('privatecloud');
     await clearExpiredFlag('privatecloud');
@@ -261,8 +270,18 @@ async function handlePrivateConnect(
     await healthCheckOnConnect('privatecloud');
     return { ok: true };
   } catch (thrown) {
+    // A thrown error here means the request never completed (TLS/CORS/connection
+    // — no HTTP status). Surface the actionable reachability hint (which appends
+    // cert + http://:19072 guidance for HTTPS) instead of a raw network error.
     const message = thrown instanceof Error ? thrown.message : String(thrown);
-    return { ok: false, error: message, detail: `network · ${message}` };
+    return {
+      ok: false,
+      // `network`: the request never reached a login endpoint — the popup shows
+      // this hint as-is rather than framing it as a sign-in failure.
+      kind: 'network',
+      error: privateCloudNetworkErrorHint(msg.baseUrl),
+      detail: `network · ${message}`,
+    };
   }
 }
 
@@ -457,6 +476,7 @@ api.runtime.onMessage.addListener(
       error?: string;
       detail?: string;
       pending?: boolean;
+      kind?: 'network' | 'auth';
     }) => void,
   ): boolean | undefined => {
     if (typeof message !== 'object' || message === null) {

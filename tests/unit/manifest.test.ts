@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { manifest } from '../../manifest.config';
+import { buildManifest, manifest } from '../../manifest.config';
 
 // F1-AC1 (load in Chrome with no manifest errors + toolbar icon appears) is a
 // MANUAL/runtime install gate — see DoD. These assertions pin the manifest SHAPE
@@ -61,13 +61,22 @@ describe('manifest permissions (F1-FR2 / F1-AC2)', () => {
 });
 
 describe('manifest host permissions (F1-FR3)', () => {
-  it('declares both candidate public-API hosts statically', () => {
-    expect(manifest.host_permissions).toContain('https://cloud.supernote.com/*');
-    expect(manifest.host_permissions).toContain('https://viewer.supernote.com/*');
+  // The x-access-token session cookie is set on the APEX `.supernote.com`, whose
+  // chrome.cookies read-permission url is `https://supernote.com/`. Both the apex
+  // and the subdomain wildcard must be granted (apex => cookie is readable;
+  // wildcard => the file API host viewer.supernote.com stays covered) on BOTH
+  // targets, or Cloud connect silently fails.
+  it('grants the apex + wildcard supernote hosts on both Chrome and Firefox', () => {
+    for (const m of [buildManifest('chrome'), buildManifest('firefox')]) {
+      expect(m.host_permissions).toContain('https://supernote.com/*');
+      expect(m.host_permissions).toContain('https://*.supernote.com/*');
+    }
   });
 
-  it("declares Ratta's S3 host for the pre-signed PUT", () => {
-    expect(manifest.host_permissions).toContain('https://*.amazonaws.com/*');
+  it("declares Ratta's S3 host for the pre-signed PUT (both targets)", () => {
+    for (const m of [buildManifest('chrome'), buildManifest('firefox')]) {
+      expect(m.host_permissions).toContain('https://*.amazonaws.com/*');
+    }
   });
 
   it('never declares <all_urls> as a static host permission', () => {

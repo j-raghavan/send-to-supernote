@@ -31,6 +31,7 @@ import {
   privateCloudProfile,
   ROOT_DIRECTORY_ID,
 } from '@domain/delivery';
+import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
 import type { DeliveryPort, UploadInput, UploadResult } from './delivery-port';
 
 export const PC_APPLY_PATH = '/file/upload/apply';
@@ -90,19 +91,19 @@ function absoluteUploadUrl(deps: PrivateCloudDeps, uploadUrl: string): string {
   return `${deps.baseUrl.replace(/\/+$/, '')}${path}`;
 }
 
-/** Run an HttpClient call, mapping a thrown (network/TLS) error to a connection failure. */
+/**
+ * Run an HttpClient call, mapping a thrown (network/TLS) error to a connection
+ * failure. Uses the SAME actionable hint as the connect path (reachability +
+ * cert/port guidance) so send-time failures are as diagnosable as connect-time.
+ */
 async function safeRequest(
-  http: HttpClient,
+  deps: { http: HttpClient; baseUrl: string },
   req: Parameters<HttpClient['request']>[0],
 ): Promise<Result<HttpResponse, DeliveryFailure>> {
   try {
-    return ok(await http.request(req));
+    return ok(await deps.http.request(req));
   } catch {
-    return err(
-      connectionFailure(
-        "Can't reach your Private Cloud server. Check the URL and that it's running.",
-      ),
-    );
+    return err(connectionFailure(privateCloudNetworkErrorHint(deps.baseUrl)));
   }
 }
 
@@ -122,7 +123,7 @@ export async function uploadToPrivateCloud(
   // 1. apply (with timestamp + nonce headers)
   const timestamp = deps.clock.now();
   const nonce = privateCloudNonce(deps.random.digits(NONCE_DIGITS), timestamp);
-  const applyRes = await safeRequest(deps.http, {
+  const applyRes = await safeRequest(deps, {
     url: endpointUrl(profile, PC_APPLY_PATH),
     method: 'POST',
     headers: { ...authHeader(deps.token), timestamp: String(timestamp), nonce },
@@ -143,7 +144,7 @@ export async function uploadToPrivateCloud(
   // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded path)
   const form = new FormData();
   form.append('file', toBlob(input.bytes, input.contentType), input.fileName);
-  const uploadRes = await safeRequest(deps.http, {
+  const uploadRes = await safeRequest(deps, {
     url: absoluteUploadUrl(deps, uploadUrl),
     method: 'POST',
     headers: authHeader(deps.token),
@@ -166,7 +167,7 @@ export async function uploadToPrivateCloud(
   }
 
   // 3. finish
-  const finishRes = await safeRequest(deps.http, {
+  const finishRes = await safeRequest(deps, {
     url: endpointUrl(profile, PC_FINISH_PATH),
     method: 'POST',
     headers: authHeader(deps.token),
@@ -193,7 +194,7 @@ export async function listPrivateCloudFolders(
   const profile = profileOf(deps);
   const all: Folder[] = [];
   for (let pageNo = 1; pageNo <= MAX_LIST_PAGES; pageNo += 1) {
-    const res = await safeRequest(deps.http, {
+    const res = await safeRequest(deps, {
       url: endpointUrl(profile, PC_LIST_PATH),
       method: 'POST',
       headers: authHeader(deps.token),
