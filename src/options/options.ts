@@ -22,7 +22,11 @@ import { JobQueue } from '@jobs/job-queue';
 import { StorageKeys } from '@shared/storage-keys';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
-import { httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
+import {
+  httpWarningFor,
+  privateCloudNetworkErrorHint,
+  validateBaseUrl,
+} from '@domain/private-cloud-url';
 import { listFolders } from '@settings/list-folders';
 import { folderKeyForTarget, pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
@@ -191,12 +195,22 @@ function wirePrivateCloud(): void {
         account: emailInput?.value ?? '',
         password: passwordInput?.value ?? '',
       },
-    ).then((result) => {
-      if (result.ok) {
-        void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
-        notifyReconnected('privatecloud');
-      }
-    });
+    )
+      .then((result) => {
+        if (result.ok) {
+          void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
+          notifyReconnected('privatecloud');
+        } else {
+          // Login reached the server but was rejected (wrong password / nonce).
+          showWarning(warning, `Could not sign in: ${result.error.message}`);
+        }
+      })
+      .catch(() => {
+        // The request never reached a login endpoint (network/TLS) — surface the
+        // same actionable reachability/cert hint the popup connect path uses,
+        // instead of failing silently / throwing in the console.
+        showWarning(warning, privateCloudNetworkErrorHint(validated.value.baseUrl));
+      });
   });
 
   byId<HTMLButtonElement>('pc-disconnect')?.addEventListener('click', () => {

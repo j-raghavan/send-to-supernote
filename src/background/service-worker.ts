@@ -244,7 +244,7 @@ interface PrivateConnectMessage {
  */
 async function handlePrivateConnect(
   msg: PrivateConnectMessage,
-): Promise<{ ok: boolean; error?: string; detail?: string }> {
+): Promise<{ ok: boolean; error?: string; detail?: string; kind?: 'network' | 'auth' }> {
   if (!msg.baseUrl) {
     return { ok: false, error: 'Missing Private Cloud server URL.' };
   }
@@ -268,6 +268,9 @@ async function handlePrivateConnect(
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     return {
       ok: false,
+      // `network`: the request never reached a login endpoint — the popup shows
+      // this hint as-is rather than framing it as a sign-in failure.
+      kind: 'network',
       error: privateCloudNetworkErrorHint(msg.baseUrl),
       detail: `network · ${message}`,
     };
@@ -465,6 +468,7 @@ api.runtime.onMessage.addListener(
       error?: string;
       detail?: string;
       pending?: boolean;
+      kind?: 'network' | 'auth';
     }) => void,
   ): boolean | undefined => {
     if (typeof message !== 'object' || message === null) {

@@ -11,7 +11,8 @@ describe('privateCloudFailureNotification (F8-FR6)', () => {
     const note = privateCloudFailureNotification(connectionFailure("can't reach server"));
     expect(note.level).toBe('error');
     expect(note.title).toContain("Can't reach your Private Cloud");
-    expect(note.message).toContain('network');
+    // The message is shown as-is (the self-contained reachability/cert hint).
+    expect(note.message).toBe("can't reach server");
   });
 
   it('uses a generic send-failed message for a protocol failure', () => {

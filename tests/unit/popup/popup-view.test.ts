@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildPopupView, popupSendRequest } from '../../../src/popup/popup-view';
+import {
+  buildPopupView,
+  connectFailureMessage,
+  popupSendRequest,
+} from '../../../src/popup/popup-view';
 import type { Settings } from '@domain/settings';
 
 const settings: Settings = {
@@ -59,5 +63,27 @@ describe('popupSendRequest (F6-FR6 one-off pick)', () => {
     const req = popupSendRequest(settings, { hostname: 'example.com' }, {});
     expect(req.mode).toBe('reader');
     expect(req.target).toBe('cloud');
+  });
+});
+
+describe('connectFailureMessage', () => {
+  it('shows a network failure hint as-is, without the "Could not sign in" framing', () => {
+    const msg = connectFailureMessage({
+      kind: 'network',
+      error: "Couldn't reach your server at https://x.",
+    });
+    expect(msg).toBe("Couldn't reach your server at https://x.");
+    expect(msg).not.toContain('Could not sign in');
+  });
+
+  it('frames a login rejection as a sign-in failure', () => {
+    expect(connectFailureMessage({ kind: 'auth', error: 'invalid credentials' })).toBe(
+      'Could not sign in: invalid credentials',
+    );
+  });
+
+  it('falls back to a default for each kind when no error message is provided', () => {
+    expect(connectFailureMessage({ kind: 'network' })).toContain('reach');
+    expect(connectFailureMessage({})).toBe('Could not sign in: unknown error');
   });
 });

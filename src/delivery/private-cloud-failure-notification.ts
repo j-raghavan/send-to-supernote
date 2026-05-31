@@ -19,10 +19,12 @@ import type { DeliveryFailure } from '@domain/delivery';
  */
 export function privateCloudFailureNotification(failure: DeliveryFailure): Notification {
   if (failure.kind === 'connection') {
+    // `failure.message` is the self-contained reachability/cert hint
+    // (privateCloudNetworkErrorHint) — show it as-is, no redundant suffix.
     return {
       level: 'error',
       title: "Can't reach your Private Cloud",
-      message: `${failure.message} (Are you on the right network and is the server running?)`,
+      message: failure.message,
     };
   }
   return { level: 'error', title: 'Private Cloud send failed', message: failure.message };

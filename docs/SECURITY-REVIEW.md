@@ -69,6 +69,16 @@ surfaces a non-HTTPS warning (`domain/private-cloud-url.httpWarningFor`, F8-FR7)
 and recommends an HTTPS reverse proxy. The extension still permits HTTP since LAN
 self-hosting is the common, user-accepted case.
 
+Conversely, when the user DOES use HTTPS, TLS validation is enforced and **cannot
+be bypassed** by an extension `fetch` (there is no `rejectUnauthorized:false`
+equivalent — that would let any extension MITM): a self-signed certificate must
+be trusted at the OS/browser level, or the connection fails. A network-layer
+failure (no HTTP status) therefore surfaces an actionable hint
+(`domain/private-cloud-url.privateCloudNetworkErrorHint`) that leads with
+reachability and, for HTTPS, appends the certificate-trust and `http://…:19072`
+guidance — used by the popup connect, the Options connect, and the send-time
+adapter so connect and send stay equally diagnosable.
+
 ## 5. Reverse-engineered-API + shared-auth risk (R-1 / R-9)
 
 Both paths use non-contractual endpoints and **share the same login flow**, so an

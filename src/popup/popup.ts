@@ -21,7 +21,7 @@ import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { api } from '@shared/browser-api';
 import type { Target } from '@domain/settings';
-import { buildPopupView } from './popup-view';
+import { buildPopupView, connectFailureMessage } from './popup-view';
 import { PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from '../options/privacy-copy';
 
 const store = new ChromeStorageLocal();
@@ -71,8 +71,8 @@ async function requestConnect(payload: {
   account: string;
   password: string;
   baseUrl?: string;
-}): Promise<{ ok: boolean; error?: string; detail?: string }> {
-  let res: { ok?: boolean; error?: string; detail?: string } | undefined;
+}): Promise<{ ok: boolean; error?: string; detail?: string; kind?: string }> {
+  let res: { ok?: boolean; error?: string; detail?: string; kind?: string } | undefined;
   try {
     res = await sendMessageWithRetry<typeof res>({ type: 'connect', ...payload });
   } catch (thrown) {
@@ -100,6 +100,7 @@ async function requestConnect(payload: {
     ok: res.ok === true,
     ...(res.error !== undefined ? { error: res.error } : {}),
     ...(res.detail !== undefined ? { detail: res.detail } : {}),
+    ...(res.kind !== undefined ? { kind: res.kind } : {}),
   };
 }
 
@@ -364,7 +365,9 @@ async function submitPrivateSignin(): Promise<void> {
   if (result.ok) {
     finish(true);
   } else {
-    finish(false, `Could not sign in: ${result.error ?? 'unknown error'}`, result.detail);
+    // A network failure already carries an actionable reachability/cert hint —
+    // show it as-is rather than framing it as a sign-in failure.
+    finish(false, connectFailureMessage(result), result.detail);
   }
 }
 
