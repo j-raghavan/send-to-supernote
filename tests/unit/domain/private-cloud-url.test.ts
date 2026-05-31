@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { HTTP_OVER_LAN_WARNING, httpWarningFor, validateBaseUrl } from '@domain/private-cloud-url';
+import {
+  HTTP_OVER_LAN_WARNING,
+  httpWarningFor,
+  privateCloudNetworkErrorHint,
+  validateBaseUrl,
+} from '@domain/private-cloud-url';
 
 describe('validateBaseUrl (F7-FR3 / F8-FR1)', () => {
   it('accepts an HTTPS reverse-proxy host and returns the origin', () => {
@@ -59,5 +64,26 @@ describe('httpWarningFor (R-10 / F8-FR7)', () => {
 
   it('does not warn for an HTTPS base URL', () => {
     expect(httpWarningFor({ baseUrl: 'https://host', isHttp: false })).toBeUndefined();
+  });
+});
+
+describe('privateCloudNetworkErrorHint (F8 connect failure guidance)', () => {
+  it('leads with certificate trust for an HTTPS URL, with the http:// fallback', () => {
+    const hint = privateCloudNetworkErrorHint('https://192.168.2.164:19072');
+    expect(hint).toContain('192.168.2.164:19072');
+    // cert-trust guidance is foregrounded (self-signed must be trusted)
+    expect(hint.toLowerCase()).toContain('certificate');
+    expect(hint.toLowerCase()).toContain('trust');
+    expect(hint.toLowerCase()).toContain('self-signed');
+    // and the plain-HTTP fallback is still offered
+    expect(hint).toContain('http://');
+    expect(hint).toMatch(/19072/);
+  });
+
+  it('gives a generic reachability hint for an http:// URL', () => {
+    const hint = privateCloudNetworkErrorHint('http://192.168.2.164:19072');
+    expect(hint).toContain('192.168.2.164:19072');
+    expect(hint.toLowerCase()).toContain('reach');
+    expect(hint.toLowerCase()).not.toContain('certificate');
   });
 });

@@ -220,9 +220,15 @@ export function parseFolderList(payload: Record<string, unknown>): Folder[] {
   return folders;
 }
 
-/** Find the id of the `Document/` folder among listed entries, if present. */
+/**
+ * Find the id of the `Document/` folder among listed entries, if present.
+ * Case-insensitive: a folder listing may report `Document`/`document` depending
+ * on account/locale, and a missed match used to fall back to the (always-
+ * rejected) root directory.
+ */
 export function findDocumentFolderId(folders: readonly Folder[]): string | undefined {
-  return folders.find((f) => f.isFolder && f.name === DOCUMENT_FOLDER_NAME)?.id;
+  const target = DOCUMENT_FOLDER_NAME.toLowerCase();
+  return folders.find((f) => f.isFolder && f.name.toLowerCase() === target)?.id;
 }
 
 /** Outcome category for any delivery step, so call sites branch uniformly. */

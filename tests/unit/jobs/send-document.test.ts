@@ -191,16 +191,37 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(h.port.listCalls).not.toContain('0');
   });
 
-  it('falls back to root when no Document folder exists', async () => {
-    h.port.foldersByDirectory.set('0', ok([{ id: '1', name: 'Other', isFolder: true }]));
+  it('resolves the Document folder case-insensitively', async () => {
+    h.port.foldersByDirectory.set('0', ok([{ id: 'doc-9', name: 'document', isFolder: true }]));
     await sendDocument(h.deps, req());
-    expect(h.port.uploadCalls[0]!.directoryId).toBe('0');
+    expect(h.port.uploadCalls[0]!.directoryId).toBe('doc-9');
   });
 
-  it('falls back to root when the root listing fails during destination resolution', async () => {
+  it('does NOT upload to root when no Document folder exists — fails and asks for a folder', async () => {
+    h.port.foldersByDirectory.set('0', ok([{ id: '1', name: 'Other', isFolder: true }]));
+    const result = await sendDocument(h.deps, req());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('delivery');
+    expect(h.port.uploadCalls).toHaveLength(0); // never attempts a doomed root upload
+    expect(h.notifier.notifications.some((n) => n.title === 'Choose a folder')).toBe(true);
+  });
+
+  it('does NOT upload to root when the root listing fails during destination resolution', async () => {
     h.port.foldersByDirectory.set('0', err({ kind: 'protocol', message: 'list down' }));
-    await sendDocument(h.deps, req());
-    expect(h.port.uploadCalls[0]!.directoryId).toBe('0');
+    const result = await sendDocument(h.deps, req());
+    expect(result.ok).toBe(false);
+    expect(h.port.uploadCalls).toHaveLength(0);
+  });
+
+  it('fails (no root upload) for a source PDF send with no destination — no blob to clean up', async () => {
+    h.port.foldersByDirectory.set('0', ok([{ id: '1', name: 'Other', isFolder: true }]));
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const result = await sendDocument(
+      h.deps,
+      req({ format: 'pdf', source: { bytes, contentType: 'application/pdf', title: 'paper' } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(h.port.uploadCalls).toHaveLength(0);
   });
 
   it('still builds a filename when the destination listing fails (no dedup data)', async () => {
@@ -334,6 +355,21 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(pcPort.uploadCalls).toHaveLength(1);
     expect(pcPort.uploadCalls[0]!.bytes).toBe(bytes);
     expect(h.badge.current).toBe('idle');
+  });
+
+  it('does NOT offer the fallback (no root upload) when the Private Cloud has no destination folder', async () => {
+    h.port.uploadResult = err({ kind: 'protocol', message: 'cloud endpoint changed' });
+    const pcPort = new FakeDeliveryPort();
+    pcPort.foldersByDirectory.set('0', ok([{ id: '1', name: 'Other', isFolder: true }])); // no Document
+    const offer = vi.fn().mockResolvedValue(true);
+    h.deps.fallback = { privatePort: () => pcPort, offer };
+
+    const result = await sendDocument(h.deps, req());
+
+    expect(result.ok).toBe(false);
+    expect(offer).not.toHaveBeenCalled(); // destination unresolved → never offered, never root upload
+    expect(pcPort.uploadCalls).toHaveLength(0);
+    expect(h.badge.current).toBe('error');
   });
 
   it('surfaces the failure when the user declines the Private Cloud fallback', async () => {

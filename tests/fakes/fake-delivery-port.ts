@@ -16,7 +16,12 @@ export class FakeDeliveryPort implements DeliveryPort {
     innerName: 'inner',
   });
   foldersByDirectory = new Map<string, Result<Folder[], DeliveryFailure>>();
-  defaultFolders: Result<Folder[], DeliveryFailure> = ok([]);
+  // Real Supernote accounts always have a `Document` folder at root; model that
+  // so the default destination resolves (the saga no longer uploads to root).
+  // Tests that need "no Document folder" / a list failure set `foldersByDirectory`.
+  defaultFolders: Result<Folder[], DeliveryFailure> = ok([
+    { id: 'default-doc', name: 'Document', isFolder: true },
+  ]);
   healthResult: Result<void, DeliveryFailure> = ok(undefined);
 
   uploadDocument(input: UploadInput): Promise<Result<UploadResult, DeliveryFailure>> {

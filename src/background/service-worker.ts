@@ -23,6 +23,7 @@ import {
 } from '@auth/cloud-session';
 import { reflectConnectionState } from '@auth/connection-state';
 import type { Target } from '@domain/settings';
+import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
 import { normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import { api } from '@shared/browser-api';
@@ -261,8 +262,15 @@ async function handlePrivateConnect(
     await healthCheckOnConnect('privatecloud');
     return { ok: true };
   } catch (thrown) {
+    // A thrown error here means the request never completed (TLS/CORS/connection
+    // — no HTTP status). Surface an actionable hint (the common cause is https://
+    // pointed at the HTTP-only port 19072) instead of a raw network error.
     const message = thrown instanceof Error ? thrown.message : String(thrown);
-    return { ok: false, error: message, detail: `network · ${message}` };
+    return {
+      ok: false,
+      error: privateCloudNetworkErrorHint(msg.baseUrl),
+      detail: `network · ${message}`,
+    };
   }
 }
 
