@@ -58,17 +58,19 @@ export interface ConnectFailure {
 }
 
 /**
- * Primary copy for a FAILED Private Cloud connect. A `network` failure never
- * reached a login endpoint, so it must NOT be framed as a sign-in failure
- * ("Could not sign in: couldn't reach…" both misleads and reads awkwardly) — the
- * SW already provides an actionable reachability/cert hint, shown as-is. Anything
- * else is a genuine login rejection and keeps the "Could not sign in:" framing.
+ * Primary copy for a FAILED Private Cloud connect. ONLY a genuine login
+ * rejection (`kind: 'auth'`) gets the "Could not sign in:" framing. A `network`
+ * failure (never reached a login endpoint) carries its own actionable
+ * reachability/cert hint, and an infrastructure failure (e.g. the SW didn't
+ * respond — no `kind`) is already a standalone message; both are shown as-is, so
+ * a missing/unknown `kind` can never mis-frame a "couldn't reach…" hint as a
+ * sign-in failure.
  */
 export function connectFailureMessage(result: ConnectFailure): string {
-  if (result.kind === 'network') {
-    return result.error ?? "Couldn't reach your Private Cloud server.";
+  if (result.kind === 'auth') {
+    return `Could not sign in: ${result.error ?? 'unknown error'}`;
   }
-  return `Could not sign in: ${result.error ?? 'unknown error'}`;
+  return result.error ?? "Couldn't reach your Private Cloud server.";
 }
 
 /** Build a one-off SendRequest from the popup's current control selections. */

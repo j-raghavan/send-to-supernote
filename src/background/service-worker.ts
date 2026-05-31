@@ -254,7 +254,15 @@ async function handlePrivateConnect(
       { baseUrl: msg.baseUrl, account: msg.account, password: msg.password },
     );
     if (!result.ok) {
-      return { ok: false, error: result.error.message, detail: formatLoginError(result.error) };
+      // `auth`: the request reached the login endpoint and was rejected (wrong
+      // password / nonce). Explicit so the popup frames it as a sign-in failure
+      // rather than relying on the absence of `kind: 'network'`.
+      return {
+        ok: false,
+        kind: 'auth',
+        error: result.error.message,
+        detail: formatLoginError(result.error),
+      };
     }
     await settingsStore.setTarget('privatecloud');
     await clearExpiredFlag('privatecloud');
@@ -263,8 +271,8 @@ async function handlePrivateConnect(
     return { ok: true };
   } catch (thrown) {
     // A thrown error here means the request never completed (TLS/CORS/connection
-    // — no HTTP status). Surface an actionable hint (the common cause is https://
-    // pointed at the HTTP-only port 19072) instead of a raw network error.
+    // — no HTTP status). Surface the actionable reachability hint (which appends
+    // cert + http://:19072 guidance for HTTPS) instead of a raw network error.
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     return {
       ok: false,

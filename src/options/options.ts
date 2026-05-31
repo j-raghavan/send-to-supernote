@@ -18,6 +18,7 @@ import { PrivateCloudStore } from '@auth/private-cloud-store';
 import { resolveSessionState } from '@auth/connection-state';
 import { disconnectPublicCloud, disconnectPrivateCloud } from '@auth/disconnect';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
+import { formatLoginError } from '@auth/login-routine';
 import { JobQueue } from '@jobs/job-queue';
 import { StorageKeys } from '@shared/storage-keys';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
@@ -177,8 +178,14 @@ function wirePrivateCloud(): void {
     showWarning(warning, validated.ok ? httpWarningFor(validated.value) : undefined);
   });
 
+  const errorEl = byId('pc-error');
+  const statusEl = byId('pc-status');
+
   saveButton.addEventListener('click', () => {
     const validated = validateBaseUrl(input.value);
+    // Clear prior failure copy on each attempt (the warning strip is advisory only).
+    showWarning(errorEl, undefined);
+    showWarning(statusEl, undefined);
     if (!validated.ok) {
       showWarning(warning, 'Enter a valid http(s) server URL.');
       return;
@@ -201,15 +208,22 @@ function wirePrivateCloud(): void {
           void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
           notifyReconnected('privatecloud');
         } else {
-          // Login reached the server but was rejected (wrong password / nonce).
-          showWarning(warning, `Could not sign in: ${result.error.message}`);
+          // Login reached the server but was rejected (wrong password / nonce):
+          // a hard failure (red), with the password-free diagnostic as detail —
+          // matching the popup's error + status presentation.
+          showWarning(errorEl, `Could not sign in: ${result.error.message}`);
+          showWarning(statusEl, formatLoginError(result.error));
         }
       })
-      .catch(() => {
+      .catch((thrown: unknown) => {
         // The request never reached a login endpoint (network/TLS) — surface the
-        // same actionable reachability/cert hint the popup connect path uses,
-        // instead of failing silently / throwing in the console.
-        showWarning(warning, privateCloudNetworkErrorHint(validated.value.baseUrl));
+        // same actionable reachability/cert hint the popup uses (as a hard error,
+        // not the advisory warning strip), keeping the raw error as detail.
+        showWarning(errorEl, privateCloudNetworkErrorHint(validated.value.baseUrl));
+        showWarning(
+          statusEl,
+          `network · ${thrown instanceof Error ? thrown.message : String(thrown)}`,
+        );
       });
   });
 

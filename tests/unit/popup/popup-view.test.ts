@@ -67,7 +67,14 @@ describe('popupSendRequest (F6-FR6 one-off pick)', () => {
 });
 
 describe('connectFailureMessage', () => {
-  it('shows a network failure hint as-is, without the "Could not sign in" framing', () => {
+  it('frames ONLY a login rejection (kind: auth) as a sign-in failure', () => {
+    expect(connectFailureMessage({ kind: 'auth', error: 'invalid credentials' })).toBe(
+      'Could not sign in: invalid credentials',
+    );
+    expect(connectFailureMessage({ kind: 'auth' })).toBe('Could not sign in: unknown error');
+  });
+
+  it('shows a network failure hint as-is (no "Could not sign in" framing)', () => {
     const msg = connectFailureMessage({
       kind: 'network',
       error: "Couldn't reach your server at https://x.",
@@ -76,14 +83,11 @@ describe('connectFailureMessage', () => {
     expect(msg).not.toContain('Could not sign in');
   });
 
-  it('frames a login rejection as a sign-in failure', () => {
-    expect(connectFailureMessage({ kind: 'auth', error: 'invalid credentials' })).toBe(
-      'Could not sign in: invalid credentials',
+  it('shows an infrastructure failure (no kind) as-is — never mis-framed as sign-in', () => {
+    // e.g. the SW didn't respond: a standalone message, not a login rejection.
+    expect(connectFailureMessage({ error: 'Background service worker did not respond.' })).toBe(
+      'Background service worker did not respond.',
     );
-  });
-
-  it('falls back to a default for each kind when no error message is provided', () => {
-    expect(connectFailureMessage({ kind: 'network' })).toContain('reach');
-    expect(connectFailureMessage({})).toBe('Could not sign in: unknown error');
+    expect(connectFailureMessage({})).toBe("Couldn't reach your Private Cloud server.");
   });
 });
