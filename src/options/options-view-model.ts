@@ -57,6 +57,15 @@ export function buildOptionsView(
   };
 }
 
+/**
+ * Whether the Private Cloud folder picker can be shown: connected to a Private
+ * Cloud server AND it is the active target. Mirrors `canPickCloudFolder` for the
+ * private panel (the picker lists the user's OWN server's folders).
+ */
+export function canPickPrivateFolder(privateSession: SessionState, target: Target): boolean {
+  return privateSession === 'connected' && target === 'privatecloud';
+}
+
 /** Validate a control value as a CaptureMode before persisting (F7-FR1). */
 export function parseModeChange(value: string): CaptureMode | undefined {
   return isCaptureMode(value) ? value : undefined;

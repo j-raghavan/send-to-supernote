@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildOptionsView,
+  canPickPrivateFolder,
   parseFormatChange,
   parseModeChange,
   parseTargetChange,
@@ -59,6 +60,21 @@ describe('buildOptionsView (F7-FR1)', () => {
 
   it('omits the account field when none is connected', () => {
     expect(buildOptionsView('disconnected', undefined, settings).account).toBeUndefined();
+  });
+});
+
+describe('canPickPrivateFolder (Private Cloud folder picker gate)', () => {
+  it('is true only when connected to Private Cloud AND it is the active target', () => {
+    expect(canPickPrivateFolder('connected', 'privatecloud')).toBe(true);
+  });
+
+  it('is false when the active target is Cloud (even if the PC session is connected)', () => {
+    expect(canPickPrivateFolder('connected', 'cloud')).toBe(false);
+  });
+
+  it('is false when the Private Cloud session is not connected', () => {
+    expect(canPickPrivateFolder('disconnected', 'privatecloud')).toBe(false);
+    expect(canPickPrivateFolder('expired', 'privatecloud')).toBe(false);
   });
 });
 

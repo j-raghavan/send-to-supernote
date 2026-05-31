@@ -10,7 +10,7 @@ import './options.css';
 import { ChromeStorageLocal } from '../background/chrome-storage';
 import { FetchHttpClient } from '../background/fetch-http-client';
 import { ChromePermissionGranter } from '../background/permissions';
-import { webCryptoSha256Hex } from '../background/crypto';
+import { webCryptoSha256Hex, WebCryptoRandomSource } from '../background/crypto';
 import { SystemClock } from '../background/clock';
 import { SettingsStore } from '@settings/settings-store';
 import { TokenStore } from '@auth/token-store';
@@ -22,6 +22,8 @@ import { formatLoginError } from '@auth/login-routine';
 import { JobQueue } from '@jobs/job-queue';
 import { StorageKeys } from '@shared/storage-keys';
 import { PublicCloudAdapter } from '@delivery/public-cloud-adapter';
+import { PrivateCloudAdapter } from '@delivery/private-cloud-adapter';
+import type { DeliveryPort } from '@delivery/delivery-port';
 import { DEFAULT_PUBLIC_PROFILE, ROOT_DIRECTORY_ID } from '@domain/delivery';
 import {
   httpWarningFor,
@@ -32,7 +34,12 @@ import { listFolders } from '@settings/list-folders';
 import { folderKeyForTarget, pickFolder, selectableFolders } from '@settings/pick-folder';
 import { onboardingCopy } from '@settings/onboarding';
 import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from './privacy-copy';
-import { buildOptionsView, parseFormatChange, parseModeChange } from './options-view-model';
+import {
+  buildOptionsView,
+  canPickPrivateFolder,
+  parseFormatChange,
+  parseModeChange,
+} from './options-view-model';
 import { captureModeDescription } from '@capture/copy';
 import { api } from '@shared/browser-api';
 
@@ -116,7 +123,10 @@ async function render(): Promise<void> {
   wireProviderTabs(view.target);
 
   if (view.canPickCloudFolder) {
-    await renderFolderPicker(current.target);
+    await renderFolderPicker('cloud');
+  }
+  if (canPickPrivateFolder(pcSession, current.target)) {
+    await renderFolderPicker('privatecloud');
   }
 
   renderOnboarding(current.target);
@@ -298,17 +308,47 @@ function renderPrivacy(): void {
 }
 
 /** Render the destination-folder picker for the public Cloud target (F7-FR2). */
-async function renderFolderPicker(target: 'cloud' | 'privatecloud'): Promise<void> {
-  const list = byId<HTMLUListElement>('folder-list');
-  if (!list) {
-    return;
+/**
+ * Build the DeliveryPort whose folders the picker lists for `target`: the public
+ * adapter for Cloud, the user's OWN server (PrivateCloudAdapter) for Private
+ * Cloud. Returns undefined when the Private Cloud base URL / token isn't stored
+ * yet (caller shows "Could not load folders.").
+ */
+async function folderPickerPort(
+  target: 'cloud' | 'privatecloud',
+): Promise<DeliveryPort | undefined> {
+  if (target === 'privatecloud') {
+    const baseUrl = await privateStore.getBaseUrl();
+    const token = await privateStore.getToken();
+    if (baseUrl === undefined || token === undefined) {
+      return undefined;
+    }
+    return new PrivateCloudAdapter({
+      http: new FetchHttpClient(),
+      baseUrl,
+      token,
+      random: new WebCryptoRandomSource(),
+      clock: new SystemClock(),
+    });
   }
   const token = (await tokens.getToken()) ?? '';
-  const port = new PublicCloudAdapter({
+  return new PublicCloudAdapter({
     http: new FetchHttpClient(),
     profile: DEFAULT_PUBLIC_PROFILE,
     token,
   });
+}
+
+async function renderFolderPicker(target: 'cloud' | 'privatecloud'): Promise<void> {
+  const list = byId<HTMLUListElement>(target === 'privatecloud' ? 'pc-folder-list' : 'folder-list');
+  if (!list) {
+    return;
+  }
+  const port = await folderPickerPort(target);
+  if (port === undefined) {
+    list.textContent = 'Could not load folders.';
+    return;
+  }
   const listed = await listFolders(port, ROOT_DIRECTORY_ID);
   if (!listed.ok) {
     list.textContent = 'Could not load folders.';
