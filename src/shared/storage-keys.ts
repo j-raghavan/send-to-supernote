@@ -15,6 +15,8 @@ export const StorageKeys = {
   apiHost: 'supernote.apiHost',
   /** Transient: id of the official-login tab while a cloud connect is pending. */
   cloudConnectTabId: 'supernote.connectTabId',
+  /** Transient: cookie store of the login tab (Incognito/container) for that connect. */
+  cloudConnectStoreId: 'supernote.connectStoreId',
 
   // Capture/send settings (F7) — declared here for the single contract; written in F7.
   defaultMode: 'settings.defaultMode',
@@ -41,12 +43,18 @@ export const StorageKeys = {
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];
 
-/** Keys that hold a public-Cloud credential/identity, cleared on Disconnect (F2-FR5). */
+/**
+ * Keys cleared on public-Cloud Disconnect (F2-FR5): the credential/identity keys
+ * plus any transient connect state, so disconnecting mid-connect cannot leave a
+ * stale pending-connect tab/store id that a later cookie change would act on.
+ */
 export const PUBLIC_CLOUD_KEYS: readonly string[] = [
   StorageKeys.token,
   StorageKeys.account,
   StorageKeys.equipment,
   StorageKeys.sessionExpired,
+  StorageKeys.cloudConnectTabId,
+  StorageKeys.cloudConnectStoreId,
 ];
 
 /** Keys that hold a Private-Cloud credential, cleared on its Disconnect (F8-FR5). */

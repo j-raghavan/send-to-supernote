@@ -217,15 +217,47 @@ export interface PermissionGranter {
   request(origin: string): Promise<boolean>;
 }
 
+/** A cookie lookup: a name on a domain (+ subdomains), within one cookie store. */
+export interface CookieQuery {
+  /** Match cookies whose host is this domain OR a subdomain of it. */
+  domain: string;
+  /** Cookie name to match. */
+  name: string;
+  /**
+   * Cookie store to read from. Omit for the browser's default store. A non-
+   * default store id targets an Incognito profile (Chrome) or a container /
+   * private store (Firefox) — both enumerated via `listStoreIds`/`storeIdForTab`.
+   */
+  storeId?: string;
+}
+
 /**
- * Reads browser cookies for a URL. Used by the Supernote-Cloud connect flow to
- * pick up the `x-access-token` session cookie the official login page sets
- * (sign-in is CAPTCHA/2FA-gated, so the extension never logs in itself). Real
- * adapter wraps `chrome.cookies`; tests inject scripted cookie values.
+ * Reads browser cookies. Used by the Supernote-Cloud connect flow to pick up the
+ * `x-access-token` session cookie the official login page sets (sign-in is
+ * CAPTCHA/2FA-gated, so the extension never logs in itself).
+ *
+ * `getAll` matches by DOMAIN (not a single pinned URL) so the cookie is found
+ * whether Supernote set it on `cloud.` or `viewer.supernote.com`; the `storeId`
+ * lets the caller read the SAME cookie store the user signed in on, so connect
+ * works from an Incognito window (Chrome) or a container/private window
+ * (Firefox), not just the default profile. Real adapter wraps `chrome.cookies`;
+ * tests inject scripted cookie values.
  */
 export interface CookieReader {
-  /** The value of cookie `name` for `url`, or undefined when absent. */
-  get(url: string, name: string): Promise<string | undefined>;
+  /** All non-empty values of cookie `q.name` under `q.domain` in store `q.storeId`. */
+  getAll(q: CookieQuery): Promise<string[]>;
+  /** Ids of every cookie store this extension can currently read (default + any granted Incognito/container stores). */
+  listStoreIds(): Promise<string[]>;
+  /** The cookie-store id that tab `tabId` belongs to, or undefined when unknown/unreadable. */
+  storeIdForTab(tabId: number): Promise<string | undefined>;
+}
+
+/** A newly-opened tab: its id and the cookie store it belongs to (when known). */
+export interface OpenedTab {
+  /** The created tab id, when the browser reports one. */
+  id?: number;
+  /** Firefox reports `cookieStoreId` directly; Chrome leaves it undefined (resolve via `storeIdForTab`). */
+  cookieStoreId?: string;
 }
 
 /**
@@ -234,8 +266,8 @@ export interface CookieReader {
  * `chrome.tabs`; tests inject a recorder.
  */
 export interface TabController {
-  /** Open a new tab at `url`; resolves to the created tab id (when known). */
-  open(url: string): Promise<number | undefined>;
+  /** Open a new tab at `url`; resolves to the created tab's id + cookie store (when known). */
+  open(url: string): Promise<OpenedTab>;
   /** Close the tab with the given id (no-op if already gone). */
   close(tabId: number): Promise<void>;
 }

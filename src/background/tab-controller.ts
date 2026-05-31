@@ -4,13 +4,19 @@
  * Coverage-excluded (architecture §9.3).
  */
 /* c8 ignore start */
-import type { TabController } from '@shared/ports';
+import type { OpenedTab, TabController } from '@shared/ports';
 import { api } from '@shared/browser-api';
 
 export class ChromeTabController implements TabController {
-  async open(url: string): Promise<number | undefined> {
+  async open(url: string): Promise<OpenedTab> {
     const tab = await api.tabs.create({ url });
-    return tab.id;
+    // Firefox populates `cookieStoreId` (container/private); Chrome leaves it
+    // undefined — the connect flow resolves the store via `storeIdForTab` there.
+    const cookieStoreId = (tab as { cookieStoreId?: string }).cookieStoreId;
+    return {
+      ...(tab.id !== undefined ? { id: tab.id } : {}),
+      ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
+    };
   }
 
   async close(tabId: number): Promise<void> {
