@@ -3,6 +3,8 @@ import {
   ACCESS_TOKEN_COOKIE,
   CLOUD_WEB_URL,
   captureCloudToken,
+  isSupernoteCookieDomain,
+  resolveConnectStoreIds,
 } from '../../../src/auth/cloud-session';
 import { decodeAccessToken } from '@domain/auth';
 import { TokenStore } from '../../../src/auth/token-store';
@@ -119,5 +121,156 @@ describe('captureCloudToken', () => {
     cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, jwt({ exp: FUTURE_EXP }));
     await captureCloudToken({ cookies, tokens, now });
     expect(await kv.get(StorageKeys.token)).toBeDefined();
+  });
+
+  it('finds the cookie when Supernote set it on viewer.supernote.com (domain match)', async () => {
+    const token = jwt({ exp: FUTURE_EXP, userId: '7', equipmentNo: 'WEB' });
+    cookies.set('https://viewer.supernote.com', ACCESS_TOKEN_COOKIE, token);
+
+    const result = await captureCloudToken({ cookies, tokens, now });
+
+    expect(result.ok).toBe(true);
+    expect(await tokens.getToken()).toBe(token);
+  });
+
+  it('reads a non-default cookie store (Incognito/container sign-in)', async () => {
+    const token = jwt({ exp: FUTURE_EXP, userId: '5' });
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, token, 'firefox-private');
+
+    // Default-store search misses it; searching the tab's store finds it.
+    expect((await captureCloudToken({ cookies, tokens, now })).ok).toBe(false);
+    const result = await captureCloudToken({
+      cookies,
+      tokens,
+      now,
+      storeIds: ['firefox-private'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await tokens.getToken()).toBe(token);
+  });
+
+  it('de-duplicates the same cookie surfaced from several stores', async () => {
+    const token = jwt({ exp: FUTURE_EXP, userId: '8' });
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, token); // default store
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, token, 'store-b');
+
+    const result = await captureCloudToken({
+      cookies,
+      tokens,
+      now,
+      storeIds: [undefined, 'store-b'],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.userId).toBe('8');
+  });
+
+  it('picks the freshest valid token when several candidates exist', async () => {
+    const mid = jwt({ exp: FUTURE_EXP + 500, userId: 'mid' });
+    const later = jwt({ exp: FUTURE_EXP + 1000, userId: 'later' });
+    const sooner = jwt({ exp: FUTURE_EXP, userId: 'sooner' });
+    // Search order is [default, store-b, store-c] -> candidates [mid, later, sooner],
+    // so the running-best both advances (mid -> later) and holds (later vs sooner).
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, mid);
+    cookies.set('https://viewer.supernote.com', ACCESS_TOKEN_COOKIE, later, 'store-b');
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, sooner, 'store-c');
+
+    const result = await captureCloudToken({
+      cookies,
+      tokens,
+      now,
+      storeIds: [undefined, 'store-b', 'store-c'],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.userId).toBe('later');
+  });
+
+  it('treats an opaque (no-exp) token as longest-lived among candidates', async () => {
+    // opaque tokens have no `exp`, so they rank as never-expiring; with the
+    // earliest-wins tie-break the first opaque seen is kept over a finite JWT.
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, 'opaque-A');
+    cookies.set(
+      'https://viewer.supernote.com',
+      ACCESS_TOKEN_COOKIE,
+      jwt({ exp: FUTURE_EXP }),
+      'store-b',
+    );
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, 'opaque-B', 'store-c');
+
+    const result = await captureCloudToken({
+      cookies,
+      tokens,
+      now,
+      storeIds: [undefined, 'store-b', 'store-c'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await tokens.getToken()).toBe('opaque-A');
+  });
+
+  it('returns expired when every candidate across stores is expired', async () => {
+    cookies.set(CLOUD_WEB_URL, ACCESS_TOKEN_COOKIE, jwt({ exp: PAST_EXP, userId: '1' }));
+    cookies.set(
+      CLOUD_WEB_URL,
+      ACCESS_TOKEN_COOKIE,
+      jwt({ exp: PAST_EXP - 50, userId: '2' }),
+      'store-b',
+    );
+
+    const result = await captureCloudToken({
+      cookies,
+      tokens,
+      now,
+      storeIds: [undefined, 'store-b'],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('expired');
+    expect(await tokens.getToken()).toBeUndefined();
+  });
+});
+
+describe('isSupernoteCookieDomain', () => {
+  it.each([
+    ['supernote.com', true],
+    ['cloud.supernote.com', true],
+    ['viewer.supernote.com', true],
+    ['.supernote.com', true], // chrome.cookies reports a leading dot for domain cookies
+    ['evil-supernote.com', false], // lookalike — must NOT match a loose includes()
+    ['notsupernote.com', false],
+    ['supernote.com.evil.com', false], // suffix attack
+    ['example.com', false],
+  ])('%s -> %s', (domain, expected) => {
+    expect(isSupernoteCookieDomain(domain)).toBe(expected);
+  });
+});
+
+describe('resolveConnectStoreIds', () => {
+  let cookies: FakeCookieReader;
+
+  beforeEach(() => {
+    cookies = new FakeCookieReader();
+  });
+
+  it('uses the recorded store (+default) without consulting the tab', async () => {
+    // No tab->store mapping seeded, so a fallback to storeIdForTab would yield
+    // undefined; getting [recorded, undefined] proves the recorded id was used.
+    const result = await resolveConnectStoreIds(cookies, 7, 'firefox-container-1');
+    expect(result).toEqual(['firefox-container-1', undefined]);
+  });
+
+  it('resolves the store from the tab when none was recorded (Chrome)', async () => {
+    cookies.setTabStore(7, 'store-incognito');
+    const result = await resolveConnectStoreIds(cookies, 7);
+    expect(result).toEqual(['store-incognito', undefined]);
+  });
+
+  it('falls back to scanning every readable store when the tab store is unknown', async () => {
+    cookies.set('https://cloud.supernote.com', ACCESS_TOKEN_COOKIE, 'x', 'store-b');
+    const result = await resolveConnectStoreIds(cookies, 7);
+    // No recorded id, tab not mapped -> listStoreIds (default + seeded).
+    expect(result).toEqual(['0', 'store-b']);
   });
 });

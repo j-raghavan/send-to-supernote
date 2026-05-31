@@ -25,6 +25,14 @@ describe('disconnect (F2-FR5 / F2-AC5)', () => {
     expect(await kv.get(StorageKeys.equipment)).toBeUndefined();
   });
 
+  it('clears any in-progress connect state (tab id + cookie store)', async () => {
+    await kv.set(StorageKeys.cloudConnectTabId, 42);
+    await kv.set(StorageKeys.cloudConnectStoreId, 'firefox-private');
+    await disconnectPublicCloud({ store: kv });
+    expect(await kv.get(StorageKeys.cloudConnectTabId)).toBeUndefined();
+    expect(await kv.get(StorageKeys.cloudConnectStoreId)).toBeUndefined();
+  });
+
   it('leaves unrelated keys untouched', async () => {
     await kv.set(StorageKeys.defaultMode, 'reader');
     await disconnectPublicCloud({ store: kv });

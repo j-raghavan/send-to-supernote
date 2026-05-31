@@ -14,7 +14,13 @@ import { retryPending } from '@jobs/retry-pending';
 import { runHealthCheck } from '@jobs/health-check';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
 import { formatLoginError } from '@auth/login-routine';
-import { ACCESS_TOKEN_COOKIE, captureCloudToken, CLOUD_WEB_URL } from '@auth/cloud-session';
+import {
+  ACCESS_TOKEN_COOKIE,
+  captureCloudToken,
+  CLOUD_WEB_URL,
+  isSupernoteCookieDomain,
+  resolveConnectStoreIds,
+} from '@auth/cloud-session';
 import { reflectConnectionState } from '@auth/connection-state';
 import type { Target } from '@domain/settings';
 import { normalizeFlags } from '@shared/feature-flags';
@@ -266,8 +272,12 @@ async function handlePrivateConnect(
  * immediate path (already signed in) and the deferred path (cookie observed
  * after the user signs in on the opened tab).
  */
-async function finalizeCloudCapture(): Promise<boolean> {
-  const result = await captureCloudToken({ cookies, tokens });
+async function finalizeCloudCapture(storeIds?: (string | undefined)[]): Promise<boolean> {
+  const result = await captureCloudToken({
+    cookies,
+    tokens,
+    ...(storeIds !== undefined ? { storeIds } : {}),
+  });
   if (!result.ok) {
     return false;
   }
@@ -283,16 +293,31 @@ async function finalizeCloudCapture(): Promise<boolean> {
  * Begin the Supernote-Cloud connect: capture the session immediately if the
  * user is already signed in on cloud.supernote.com; otherwise open the official
  * login page and arm the cookie watcher to finish the connect once they sign in.
+ *
+ * The immediate capture scans EVERY readable cookie store (default + any granted
+ * Incognito/container store) so an existing session is found wherever the user
+ * is signed in. The opened login tab's store is recorded so the deferred capture
+ * reads the SAME store the user signs in on (Chrome Incognito / Firefox
+ * container or private window), where the cookie lives in a non-default store.
  */
 async function beginCloudConnect(): Promise<{ ok: boolean; pending?: boolean }> {
-  if (await finalizeCloudCapture()) {
+  if (await finalizeCloudCapture(await cookies.listStoreIds())) {
     return { ok: true };
   }
-  const tabId = await tabs.open(`${CLOUD_WEB_URL}/#/login`);
-  if (tabId !== undefined) {
-    await store.set(StorageKeys.cloudConnectTabId, tabId);
+  const tab = await tabs.open(`${CLOUD_WEB_URL}/#/login`);
+  if (tab.id !== undefined) {
+    await store.set(StorageKeys.cloudConnectTabId, tab.id);
+    if (tab.cookieStoreId !== undefined) {
+      await store.set(StorageKeys.cloudConnectStoreId, tab.cookieStoreId);
+    }
   }
   return { ok: false, pending: true };
+}
+
+/** Cookie stores to search when finalizing the pending connect for `tabId`. */
+async function pendingConnectStoreIds(tabId: number): Promise<(string | undefined)[]> {
+  const recorded = await store.get<string>(StorageKeys.cloudConnectStoreId);
+  return resolveConnectStoreIds(cookies, tabId, recorded);
 }
 
 /** Finish a pending cloud connect once the session cookie appears. */
@@ -301,15 +326,42 @@ async function onCloudCookieSet(): Promise<void> {
   if (pendingTabId === undefined) {
     return; // No connect in progress — ignore unrelated cookie changes.
   }
-  if (!(await finalizeCloudCapture())) {
+  if (!(await finalizeCloudCapture(await pendingConnectStoreIds(pendingTabId)))) {
     return; // Cookie not usable yet (e.g. mid-login) — wait for the next change.
   }
-  await store.remove(StorageKeys.cloudConnectTabId);
+  await clearPendingCloudConnect();
   await tabs.close(pendingTabId);
   await notifier.notify({
     level: 'success',
     title: 'Connected to Supernote Cloud',
     message: 'You can now send pages to your Supernote.',
+  });
+}
+
+/** Clear the transient pending-connect keys (tab id + its cookie store). */
+async function clearPendingCloudConnect(): Promise<void> {
+  await store.remove(StorageKeys.cloudConnectTabId);
+  await store.remove(StorageKeys.cloudConnectStoreId);
+}
+
+/**
+ * If the user closes the official-login tab before the session was captured, the
+ * connect would otherwise dead-end silently (tab gone, still "Connect…", no
+ * reason). Surface ONE actionable notice and clear the pending state. The
+ * success path clears the pending tab id BEFORE closing the tab, so the
+ * self-close above does not trigger this.
+ */
+async function onLoginTabClosed(tabId: number): Promise<void> {
+  const pendingTabId = await store.get<number>(StorageKeys.cloudConnectTabId);
+  if (pendingTabId !== tabId) {
+    return;
+  }
+  await clearPendingCloudConnect();
+  await notifier.notify({
+    level: 'warning',
+    title: 'Supernote sign-in didn’t finish',
+    message:
+      'Couldn’t read your Supernote session. If you signed in using a private/incognito or container window, allow this extension there (or use a normal window), then click Connect again.',
   });
 }
 
@@ -319,7 +371,7 @@ api.cookies.onChanged.addListener((change) => {
   if (
     change.removed ||
     change.cookie.name !== ACCESS_TOKEN_COOKIE ||
-    !change.cookie.domain.includes('supernote.com')
+    !isSupernoteCookieDomain(change.cookie.domain)
   ) {
     return;
   }
@@ -335,6 +387,12 @@ api.tabs.onUpdated.addListener((tabId, changeInfo) => {
     return;
   }
   void finalizePendingConnectForTab(tabId);
+});
+
+// Dead-end guard: if the user closes the login tab before we captured the
+// session, tell them why instead of leaving the popup stuck on "Connect…".
+api.tabs.onRemoved.addListener((tabId) => {
+  void onLoginTabClosed(tabId);
 });
 
 async function finalizePendingConnectForTab(tabId: number): Promise<void> {
