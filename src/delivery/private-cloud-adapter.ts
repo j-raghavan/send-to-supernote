@@ -191,18 +191,18 @@ export async function uploadToPrivateCloud(
   }
 
   // 3. finish
-const finishRes = await safeRequest(deps, {
-  url: endpointUrl(profile, PC_FINISH_PATH),
-  method: 'POST',
-  headers: authHeader(deps.token),
-  body: {
-    directoryId: input.directoryId,
-    fileName: input.fileName,
-    innerName,
-    md5,
-    fileSize: size,
-  },
-});
+  const finishRes = await safeRequest(deps, {
+    url: endpointUrl(profile, PC_FINISH_PATH),
+    method: 'POST',
+    headers: authHeader(deps.token),
+    body: {
+      directoryId: input.directoryId,
+      fileName: input.fileName,
+      innerName,
+      md5,
+      fileSize: size,
+    },
+  });
   if (!finishRes.ok) {
     return finishRes;
   }
@@ -228,13 +228,13 @@ export async function listPrivateCloudFolders(
       url: endpointUrl(profile, PC_LIST_PATH),
       method: 'POST',
       headers: authHeader(deps.token),
-     body: {
-  directoryId,
-  pageNo,
-  pageSize: LIST_PAGE_SIZE,
-  order: 'time',
-  sequence: 'desc',
-}, 
+      body: {
+        directoryId,
+        pageNo,
+        pageSize: LIST_PAGE_SIZE,
+        order: 'time',
+        sequence: 'desc',
+      },
     });
     if (!res.ok) {
       return res;
