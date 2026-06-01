@@ -217,6 +217,10 @@ function wirePrivateCloud(): void {
         if (result.ok) {
           void new ChromePermissionGranter().request(`${validated.value.baseUrl}/*`);
           notifyReconnected('privatecloud');
+          // Refresh the panel immediately (connected state + folder picker),
+          // mirroring the public-Cloud connect path — otherwise the UI lags
+          // until the next event/refresh.
+          void render();
         } else {
           // Login reached the server but was rejected (wrong password / nonce):
           // a hard failure (red), with the password-free diagnostic as detail —
