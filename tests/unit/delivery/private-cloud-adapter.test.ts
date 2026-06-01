@@ -115,7 +115,7 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     expect(finishBody.innerName).toBe('srv-object-42.pdf');
   });
 
-  it('omits innerName from finish and falls back to fileName when apply returns none', async () => {
+  it('sends innerName=fileName at finish when apply returns none', async () => {
     happyPath(http);
     const result = await uploadToPrivateCloud(deps(http), input());
     expect(result.ok).toBe(true);
@@ -123,7 +123,17 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
       expect(result.value.innerName).toBe('My-Article.pdf');
     }
     const finishBody = http.requests[2]!.body as Record<string, unknown>;
-    expect('innerName' in finishBody).toBe(false);
+    expect(finishBody.innerName).toBe('My-Article.pdf');
+  });
+
+  it('accepts the apply URL under the `partUploadUrl` field as a last resort', async () => {
+    http
+      .on(PC_APPLY_PATH, { status: 200, json: { success: true, partUploadUrl: OSS_PATH } })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    expect(http.urls[1]).toBe(`${BASE}${OSS_PATH}`);
   });
 
   it('requests the folder list ordered by time descending (server pagination parity)', async () => {

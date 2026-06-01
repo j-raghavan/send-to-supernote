@@ -56,6 +56,8 @@ interface ApplyResponse {
   url?: unknown;
   /** Absolute upload URL some Private Cloud builds return (reverse-proxy setups). */
   fullUploadUrl?: unknown;
+  /** Multipart/part upload URL some builds return; last-resort fallback. */
+  partUploadUrl?: unknown;
   /** Server-side object name to echo back at finish (some Private Cloud builds). */
   innerName?: unknown;
 }
@@ -75,7 +77,7 @@ function authHeader(token: string): Record<string, string> {
  * is re-based onto the configured server at the POST step (see resolveUploadUrl).
  */
 function applyUploadUrl(payload: ApplyResponse): string | undefined {
-  const candidates = [payload.fullUploadUrl, payload.uploadUrl, payload.url];
+  const candidates = [payload.fullUploadUrl, payload.uploadUrl, payload.url, payload.partUploadUrl];
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.length > 0) {
       return candidate;
@@ -85,15 +87,15 @@ function applyUploadUrl(payload: ApplyResponse): string | undefined {
 }
 
 /**
- * The server-side object name the apply step recorded, when the build returns one.
- * Some Private Cloud builds require this exact `innerName` to be echoed back at
- * finish (otherwise finish rejects the upload); absent on others, in which case
- * we fall back to the file name.
+ * The server-side object name the apply step recorded. Some Private Cloud builds
+ * require this exact `innerName` to be echoed back at finish (otherwise finish
+ * rejects the upload); when the build doesn't return one, we send the file name
+ * (the finish step has always carried a name, so this is safe across builds).
  */
-function applyInnerName(payload: ApplyResponse): string | undefined {
+function applyInnerName(payload: ApplyResponse, fallback: string): string {
   return typeof payload.innerName === 'string' && payload.innerName.length > 0
     ? payload.innerName
-    : undefined;
+    : fallback;
 }
 
 /** Wrap bytes in a Blob with a plain ArrayBuffer backing (TS6 typed-array safety). */
@@ -152,7 +154,7 @@ export async function uploadToPrivateCloud(
   if (uploadUrl === undefined) {
     return err({ kind: 'protocol', message: 'Private Cloud apply returned no upload URL' });
   }
-  const innerName = applyInnerName(applyEnv.payload);
+  const innerName = applyInnerName(applyEnv.payload, input.fileName);
 
   // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded path)
   const form = new FormData();
@@ -179,22 +181,19 @@ export async function uploadToPrivateCloud(
     );
   }
 
-  // 3. finish — echo the apply-issued innerName when the server provided one
-  // (some builds require it; finish rejects the upload otherwise).
-  const finishBody: Record<string, unknown> = {
-    directoryId: input.directoryId,
-    fileName: input.fileName,
-    md5,
-    fileSize: size,
-  };
-  if (innerName !== undefined) {
-    finishBody.innerName = innerName;
-  }
+  // 3. finish — always echo innerName (apply-issued when present, else the file
+  // name); some builds require it and the finish step has always carried a name.
   const finishRes = await safeRequest(deps, {
     url: endpointUrl(profile, PC_FINISH_PATH),
     method: 'POST',
     headers: authHeader(deps.token),
-    body: finishBody,
+    body: {
+      directoryId: input.directoryId,
+      fileName: input.fileName,
+      innerName,
+      md5,
+      fileSize: size,
+    },
   });
   if (!finishRes.ok) {
     return finishRes;
@@ -206,7 +205,7 @@ export async function uploadToPrivateCloud(
     );
   }
 
-  return ok({ fileName: input.fileName, innerName: innerName ?? input.fileName });
+  return ok({ fileName: input.fileName, innerName });
 }
 
 /** List a Private Cloud directory via /api/file/list/query, paginated + normalized. */
