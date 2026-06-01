@@ -261,6 +261,28 @@ export function classifyDeliveryFailure(
   };
 }
 
+// S3 reports a failed PUT with an XML body: `<Error><Code>…</Code>
+// <Message>…</Message>…</Error>`. These extract those fields without a DOM.
+const S3_CODE = /<Code>([^<]+)<\/Code>/;
+const S3_MESSAGE = /<Message>([^<]+)<\/Message>/;
+
+/**
+ * Build the message for a failed S3 PUT (F5-FR2). Promotes AWS's machine code
+ * (e.g. `SignatureDoesNotMatch`, `AccessDenied`, `RequestTimeTooSkewed`) and
+ * message out of the XML error body into the surfaced reason, so a 403 is
+ * actionable instead of opaque. Falls back to just the status when the body is
+ * absent or unparseable.
+ */
+export function s3UploadFailureMessage(httpStatus: number, bodyText?: string): string {
+  const code = bodyText !== undefined ? S3_CODE.exec(bodyText)?.[1]?.trim() : undefined;
+  const head =
+    code !== undefined && code.length > 0
+      ? `S3 upload failed (HTTP ${String(httpStatus)}: ${code})`
+      : `S3 upload failed (HTTP ${String(httpStatus)})`;
+  const detail = bodyText !== undefined ? S3_MESSAGE.exec(bodyText)?.[1]?.trim() : undefined;
+  return detail !== undefined && detail.length > 0 ? `${head} ${detail}` : head;
+}
+
 /** Basename of a URL path — `innerName` for the finish step (F5-FR2). */
 export function basenameFromUrl(url: string): string {
   const withoutQuery = url.split('?', 1).join('');

@@ -66,8 +66,10 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
     document.title = '';
   });
 
-  it('routes EPUB to renderEpub with title/bodyHtml/urn:uuid identifier', async () => {
-    const html = '<h1>My Title</h1><p>body</p>';
+  it('routes EPUB to renderEpub with title/bodyHtml/urn:uuid identifier, normalizing to XHTML', async () => {
+    // A non-self-closed <img> (HTML5 serialization) must reach renderEpub as
+    // well-formed XHTML, else the EPUB chapter breaks at the first image.
+    const html = '<h1>My Title</h1><p>body</p><img src="data:image/png;base64,AAAA">';
     const bytes = await renderToBytes(html, resolveRenderOptions('epub'));
 
     expect(renderHtmlToPdf).not.toHaveBeenCalled();
@@ -78,7 +80,14 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
       identifier: string;
     };
     expect(input.title).toBe('My Title'); // fed by titleFromHtml(html) when no options.title
-    expect(input.bodyHtml).toBe(html);
+    expect(input.bodyHtml).toContain('body');
+    expect(input.bodyHtml).toContain('data:image/png;base64,AAAA');
+    expect(input.bodyHtml).not.toMatch(/<img[^>]*[^/]>/); // <img> is self-closed, not left open
+    // The normalized fragment embeds into an EPUB chapter as well-formed XML.
+    const chapter = `<html xmlns="http://www.w3.org/1999/xhtml"><body>${input.bodyHtml}</body></html>`;
+    expect(
+      new DOMParser().parseFromString(chapter, 'application/xml').querySelector('parsererror'),
+    ).toBeNull();
     expect(input.identifier).toMatch(/^urn:uuid:[0-9a-f-]{36}$/i);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4]);
   });

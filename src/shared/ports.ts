@@ -78,6 +78,13 @@ export interface HttpResponse {
   status: number;
   /** Parsed JSON body when the response is JSON; otherwise undefined. */
   json?: unknown;
+  /**
+   * Raw text of a non-JSON ERROR body (captured only on a non-2xx status), used
+   * to surface the underlying reason. The S3 PUT (F5-FR2) answers a failure with
+   * an XML `<Error><Code>…</Code></Error>` body, not JSON; carrying it here lets
+   * the adapter report e.g. `SignatureDoesNotMatch` instead of a bare HTTP 403.
+   */
+  bodyText?: string;
 }
 
 /**

@@ -21,8 +21,20 @@ export class FetchHttpClient implements HttpClient {
       ...(encoded.body !== undefined ? { body: encoded.body as BodyInit } : {}),
     });
 
-    const json = await parseJsonSafely(response);
-    return json !== undefined ? { status: response.status, json } : { status: response.status };
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      const json = await parseJsonSafely(response);
+      return json !== undefined ? { status: response.status, json } : { status: response.status };
+    }
+    // Non-JSON: on a failure, capture the body text (e.g. the S3 XML error) so the
+    // delivery adapter can promote AWS's `<Code>` into an actionable message.
+    if (!response.ok) {
+      const bodyText = await safeText(response);
+      return bodyText !== undefined
+        ? { status: response.status, bodyText }
+        : { status: response.status };
+    }
+    return { status: response.status };
   }
 
   async getBytes(url: string): Promise<{ status: number; bytes?: Uint8Array }> {
@@ -34,14 +46,22 @@ export class FetchHttpClient implements HttpClient {
   }
 }
 
-/** Parse a JSON body when present; tolerate empty/non-JSON (e.g. the S3 PUT 200). */
+/** Parse a JSON body (caller has already checked the content-type); tolerate empty/invalid. */
 async function parseJsonSafely(response: Response): Promise<unknown> {
-  const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.includes('application/json')) {
-    return undefined;
-  }
   try {
     return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read an error body as text; tolerate an unreadable/empty body (returns undefined). */
+async function safeText(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text();
+    // Bound it — an error body is small (the S3 XML is well under this); never
+    // let an unexpected large body bloat the surfaced message.
+    return text.length > 0 ? text.slice(0, 2048) : undefined;
   } catch {
     return undefined;
   }

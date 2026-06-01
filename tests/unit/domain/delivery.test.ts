@@ -17,6 +17,7 @@ import {
   privateCloudProfile,
   resolvePublicProfile,
   CLOUD_PUBLIC_PROFILE,
+  s3UploadFailureMessage,
 } from '@domain/delivery';
 
 describe('ApiProfile (R-8 / ADR-0003)', () => {
@@ -305,6 +306,48 @@ describe('connectionFailure (F8-FR6)', () => {
     const f = connectionFailure("can't reach server");
     expect(f.kind).toBe('connection');
     expect(f.message).toBe("can't reach server");
+  });
+});
+
+describe('s3UploadFailureMessage (F5-FR2)', () => {
+  const xml = (code: string, message?: string): string =>
+    `<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code>` +
+    (message !== undefined ? `<Message>${message}</Message>` : '') +
+    `<RequestId>abc</RequestId></Error>`;
+
+  it('promotes the AWS error code into the message', () => {
+    expect(s3UploadFailureMessage(403, xml('SignatureDoesNotMatch'))).toBe(
+      'S3 upload failed (HTTP 403: SignatureDoesNotMatch)',
+    );
+  });
+
+  it('appends the AWS message when present', () => {
+    const msg = s3UploadFailureMessage(
+      403,
+      xml(
+        'RequestTimeTooSkewed',
+        'The difference between the request time and the current time is too large.',
+      ),
+    );
+    expect(msg).toContain('RequestTimeTooSkewed');
+    expect(msg).toContain('too large');
+  });
+
+  it('falls back to the bare status when there is no body', () => {
+    expect(s3UploadFailureMessage(403, undefined)).toBe('S3 upload failed (HTTP 403)');
+  });
+
+  it('falls back to the bare status when the body has no <Code>', () => {
+    expect(s3UploadFailureMessage(500, '<html>gateway error</html>')).toBe(
+      'S3 upload failed (HTTP 500)',
+    );
+  });
+
+  it('ignores an empty <Code> and trims whitespace around a real one', () => {
+    expect(s3UploadFailureMessage(403, '<Code></Code>')).toBe('S3 upload failed (HTTP 403)');
+    expect(s3UploadFailureMessage(403, '<Code>  AccessDenied  </Code>')).toBe(
+      'S3 upload failed (HTTP 403: AccessDenied)',
+    );
   });
 });
 

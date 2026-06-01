@@ -162,6 +162,24 @@ describe('uploadToCloud (F5-FR2)', () => {
     }
   });
 
+  it('surfaces the AWS error code from the S3 XML body on a failed PUT', async () => {
+    http
+      .on(APPLY_PATH, { status: 200, json: { success: true, url: S3_URL } })
+      .on('s3.amazonaws.com', {
+        status: 403,
+        bodyText:
+          '<?xml version="1.0"?><Error><Code>SignatureDoesNotMatch</Code>' +
+          '<Message>The request signature we calculated does not match.</Message></Error>',
+      });
+    const result = await uploadToCloud(deps(http), input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('protocol');
+      expect(result.error.message).toContain('403');
+      expect(result.error.message).toContain('SignatureDoesNotMatch');
+    }
+  });
+
   it('omits S3 Authorization/date headers when apply does not return them', async () => {
     http
       .on(APPLY_PATH, { status: 200, json: { success: true, url: S3_URL } })

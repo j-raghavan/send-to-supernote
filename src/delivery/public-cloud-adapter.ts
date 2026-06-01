@@ -24,6 +24,7 @@ import {
   normalizeEnvelope,
   parseFolderList,
   ROOT_DIRECTORY_ID,
+  s3UploadFailureMessage,
 } from '@domain/delivery';
 import type { DeliveryPort, UploadInput, UploadResult } from './delivery-port';
 
@@ -111,7 +112,12 @@ export async function uploadToCloud(
     body: input.bytes,
   });
   if (putRes.status < 200 || putRes.status >= 300) {
-    return err({ kind: 'protocol', message: `S3 upload failed (HTTP ${String(putRes.status)})` });
+    // Surface AWS's XML error code (e.g. SignatureDoesNotMatch / RequestTimeTooSkewed)
+    // when present so a 403 is actionable rather than opaque.
+    return err({
+      kind: 'protocol',
+      message: s3UploadFailureMessage(putRes.status, putRes.bodyText),
+    });
   }
 
   // 3. finish (innerName = basename of the apply URL)

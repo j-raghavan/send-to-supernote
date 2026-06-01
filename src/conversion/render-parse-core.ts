@@ -19,6 +19,7 @@ import { type ReaderExtract, isEmptyReaderExtract } from '@domain/capture';
 import { extractReaderFromDocument } from '../content/reader';
 import { renderHtmlToPdf } from '../offscreen/pdf-renderer';
 import { renderEpub } from '../offscreen/epub-renderer';
+import { toXhtml } from './html-to-xhtml';
 
 /**
  * Derive an EPUB title from the content's first <h1>, else the generic
@@ -46,7 +47,10 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
     const provided = options.title?.trim();
     return renderEpub({
       title: provided && provided.length > 0 ? provided : titleFromHtml(html),
-      bodyHtml: html,
+      // EPUB chapters are parsed as strict XHTML — normalize the captured HTML to
+      // well-formed XHTML (self-closed void elements) so a strict reader does not
+      // halt at the first `<img>`/`<br>` and truncate the document.
+      bodyHtml: toXhtml(html),
       identifier: `urn:uuid:${crypto.randomUUID()}`,
     });
   }
