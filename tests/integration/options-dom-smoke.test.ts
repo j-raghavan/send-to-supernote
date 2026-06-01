@@ -39,6 +39,7 @@ const OPTIONS_HTML = `
     <select id="default-format"><option value="epub">e</option><option value="pdf">p</option></select>
     <input id="confirm-filename" type="checkbox" />
     <ul id="folder-list"></ul>
+    <span id="pc-connection-status">Not connected</span>
     <input id="pc-base-url" type="url" />
     <input id="pc-email" type="email" />
     <input id="pc-password" type="password" />
@@ -46,6 +47,8 @@ const OPTIONS_HTML = `
     <button id="pc-save" type="button"></button>
     <button id="pc-disconnect" type="button"></button>
     <p id="pc-http-warning" hidden></p>
+    <p id="pc-error" hidden></p>
+    <p id="pc-status" hidden></p>
     <p id="onboarding-copy"></p>
     <p id="no-sharing"></p>
     <a id="privacy-link" href="#"></a>
@@ -89,6 +92,10 @@ function installChrome(): ChromeFake {
       onMessage: { addListener: () => undefined },
       getURL: (path: string) => path,
       lastError: undefined,
+    },
+    permissions: {
+      request: () => Promise.resolve(true),
+      contains: () => Promise.resolve(true),
     },
   };
   (globalThis as unknown as { chrome: unknown }).chrome = chromeFake;
@@ -152,6 +159,29 @@ describe('Options shell DOM-smoke (wired Connect/Disconnect, F10 wiring)', () =>
     expect(document.getElementById('connect-cloud-hint')!.textContent).toContain(
       'Finish signing in',
     );
+  });
+
+  it('Private Cloud connect refreshes the panel on success (render() runs)', async () => {
+    await import('../../src/options/options');
+    await flush(); // initial render()
+    expect(document.getElementById('pc-connection-status')!.textContent).toBe('Not connected');
+
+    (document.getElementById('pc-base-url') as HTMLInputElement).value = 'http://nas.local:8080';
+    (document.getElementById('pc-email') as HTMLInputElement).value = 'me@x.com';
+    (document.getElementById('pc-password') as HTMLInputElement).value = 'secret';
+    document.getElementById('pc-save')!.dispatchEvent(new Event('click', { bubbles: true }));
+    // login nonce + login + persist, then the success-branch render()
+    for (let i = 0; i < 6; i += 1) {
+      await flush();
+    }
+
+    // render() ran on success: the panel reflects the connected session...
+    expect(document.getElementById('pc-connection-status')!.textContent).toBe('Connected');
+    // ...and the SW was told to retry (F9 reconnection).
+    expect(chromeFake.runtime.messages).toContainEqual({
+      type: 'reconnected',
+      target: 'privatecloud',
+    });
   });
 
   it('Disconnect removes the stored token', async () => {

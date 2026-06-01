@@ -83,6 +83,67 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     expect((upload.body as FormData).get('file')).toBeInstanceOf(Blob);
   });
 
+  it('accepts the apply URL under the `fullUploadUrl` field (preferred when present)', async () => {
+    const full = `${BASE}/api/oss/upload?token=abc`;
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, fullUploadUrl: full, uploadUrl: OSS_PATH },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    // fullUploadUrl wins over uploadUrl; its path + query are used.
+    expect(http.urls[1]).toBe(full);
+  });
+
+  it('echoes the apply-issued innerName at finish and returns it', async () => {
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, uploadUrl: OSS_PATH, innerName: 'srv-object-42.pdf' },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.innerName).toBe('srv-object-42.pdf');
+    }
+    const finishBody = http.requests[2]!.body as Record<string, unknown>;
+    expect(finishBody.innerName).toBe('srv-object-42.pdf');
+  });
+
+  it('sends innerName=fileName at finish when apply returns none', async () => {
+    happyPath(http);
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.innerName).toBe('My-Article.pdf');
+    }
+    const finishBody = http.requests[2]!.body as Record<string, unknown>;
+    expect(finishBody.innerName).toBe('My-Article.pdf');
+  });
+
+  it('accepts the apply URL under the `partUploadUrl` field as a last resort', async () => {
+    http
+      .on(PC_APPLY_PATH, { status: 200, json: { success: true, partUploadUrl: OSS_PATH } })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    expect(http.urls[1]).toBe(`${BASE}${OSS_PATH}`);
+  });
+
+  it('requests the folder list ordered by time descending (server pagination parity)', async () => {
+    http.on(PC_LIST_PATH, { status: 200, json: { success: true, total: 0, userFileVOList: [] } });
+    await listPrivateCloudFolders(deps(http), '0');
+    const listBody = http.requests[0]!.body as Record<string, unknown>;
+    expect(listBody.order).toBe('time');
+    expect(listBody.sequence).toBe('desc');
+  });
+
   it('accepts the apply URL under the `url` field too', async () => {
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, url: OSS_PATH } })
@@ -92,7 +153,7 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('handles an absolute apply upload URL', async () => {
+  it('handles an absolute apply upload URL on the configured host', async () => {
     const absolute = `${BASE}/api/oss/upload`;
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: absolute } })
@@ -100,6 +161,21 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
       .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
     await uploadToPrivateCloud(deps(http), input());
     expect(http.urls[1]).toBe(absolute);
+  });
+
+  it('re-bases a foreign/internal host the apply response names onto the configured base (D-3)', async () => {
+    // A reverse-proxied server can return an internal origin; the file POST (with
+    // the JWT) must still go ONLY to the user-configured base, never that host.
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, fullUploadUrl: 'http://10.0.0.9:9000/api/oss/upload?sig=xyz' },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    await uploadToPrivateCloud(deps(http), input());
+    expect(http.urls[1]).toBe(`${BASE}/api/oss/upload?sig=xyz`);
+    expect(new URL(http.urls[1]!).host).toBe('192.168.1.5:8080');
   });
 
   it('sends the correct hex md5 + size on apply and finish', async () => {
@@ -204,6 +280,21 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
       expect(result.error.kind).toBe('protocol');
       expect(result.error.message).toContain('no upload URL');
     }
+  });
+
+  it('fails with protocol (no upload attempted) when apply returns a non-http upload URL', async () => {
+    http.on(PC_APPLY_PATH, {
+      status: 200,
+      json: { success: true, uploadUrl: 'javascript:alert(1)' },
+    });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('protocol');
+      expect(result.error.message).toContain('malformed upload URL');
+    }
+    // Only the apply request was made — the file POST was never attempted.
+    expect(http.requests).toHaveLength(1);
   });
 
   it('fails when the multipart upload returns a non-2xx status', async () => {
