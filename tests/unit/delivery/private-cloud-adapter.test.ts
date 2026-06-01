@@ -83,6 +83,57 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     expect((upload.body as FormData).get('file')).toBeInstanceOf(Blob);
   });
 
+  it('accepts the apply URL under the `fullUploadUrl` field (preferred when present)', async () => {
+    const full = `${BASE}/api/oss/upload?token=abc`;
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, fullUploadUrl: full, uploadUrl: OSS_PATH },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    // fullUploadUrl wins over uploadUrl; its path + query are used.
+    expect(http.urls[1]).toBe(full);
+  });
+
+  it('echoes the apply-issued innerName at finish and returns it', async () => {
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, uploadUrl: OSS_PATH, innerName: 'srv-object-42.pdf' },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.innerName).toBe('srv-object-42.pdf');
+    }
+    const finishBody = http.requests[2]!.body as Record<string, unknown>;
+    expect(finishBody.innerName).toBe('srv-object-42.pdf');
+  });
+
+  it('omits innerName from finish and falls back to fileName when apply returns none', async () => {
+    happyPath(http);
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.innerName).toBe('My-Article.pdf');
+    }
+    const finishBody = http.requests[2]!.body as Record<string, unknown>;
+    expect('innerName' in finishBody).toBe(false);
+  });
+
+  it('requests the folder list ordered by time descending (server pagination parity)', async () => {
+    http.on(PC_LIST_PATH, { status: 200, json: { success: true, total: 0, userFileVOList: [] } });
+    await listPrivateCloudFolders(deps(http), '0');
+    const listBody = http.requests[0]!.body as Record<string, unknown>;
+    expect(listBody.order).toBe('time');
+    expect(listBody.sequence).toBe('desc');
+  });
+
   it('accepts the apply URL under the `url` field too', async () => {
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, url: OSS_PATH } })

@@ -54,6 +54,10 @@ interface ApplyResponse {
   /** The upload URL the server returns (commonly /api/oss/upload). */
   uploadUrl?: unknown;
   url?: unknown;
+  /** Absolute upload URL some Private Cloud builds return (reverse-proxy setups). */
+  fullUploadUrl?: unknown;
+  /** Server-side object name to echo back at finish (some Private Cloud builds). */
+  innerName?: unknown;
 }
 
 function profileOf(deps: PrivateCloudDeps): ApiProfile {
@@ -64,15 +68,32 @@ function authHeader(token: string): Record<string, string> {
   return { 'x-access-token': token };
 }
 
-/** Resolve the upload URL the apply step returned (uploadUrl or url field). */
+/**
+ * Resolve the upload URL the apply step returned. Builds vary: some return
+ * `fullUploadUrl` (an absolute URL), others `uploadUrl` or `url` (commonly the
+ * relative /api/oss/upload). `fullUploadUrl` wins when present; the host it names
+ * is re-based onto the configured server at the POST step (see resolveUploadUrl).
+ */
 function applyUploadUrl(payload: ApplyResponse): string | undefined {
-  if (typeof payload.uploadUrl === 'string' && payload.uploadUrl.length > 0) {
-    return payload.uploadUrl;
-  }
-  if (typeof payload.url === 'string' && payload.url.length > 0) {
-    return payload.url;
+  const candidates = [payload.fullUploadUrl, payload.uploadUrl, payload.url];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      return candidate;
+    }
   }
   return undefined;
+}
+
+/**
+ * The server-side object name the apply step recorded, when the build returns one.
+ * Some Private Cloud builds require this exact `innerName` to be echoed back at
+ * finish (otherwise finish rejects the upload); absent on others, in which case
+ * we fall back to the file name.
+ */
+function applyInnerName(payload: ApplyResponse): string | undefined {
+  return typeof payload.innerName === 'string' && payload.innerName.length > 0
+    ? payload.innerName
+    : undefined;
 }
 
 /** Wrap bytes in a Blob with a plain ArrayBuffer backing (TS6 typed-array safety). */
@@ -140,6 +161,7 @@ export async function uploadToPrivateCloud(
   if (uploadUrl === undefined) {
     return err({ kind: 'protocol', message: 'Private Cloud apply returned no upload URL' });
   }
+  const innerName = applyInnerName(applyEnv.payload);
 
   // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded path)
   const form = new FormData();
@@ -166,12 +188,22 @@ export async function uploadToPrivateCloud(
     );
   }
 
-  // 3. finish
+  // 3. finish — echo the apply-issued innerName when the server provided one
+  // (some builds require it; finish rejects the upload otherwise).
+  const finishBody: Record<string, unknown> = {
+    directoryId: input.directoryId,
+    fileName: input.fileName,
+    md5,
+    fileSize: size,
+  };
+  if (innerName !== undefined) {
+    finishBody.innerName = innerName;
+  }
   const finishRes = await safeRequest(deps, {
     url: endpointUrl(profile, PC_FINISH_PATH),
     method: 'POST',
     headers: authHeader(deps.token),
-    body: { directoryId: input.directoryId, fileName: input.fileName, md5, fileSize: size },
+    body: finishBody,
   });
   if (!finishRes.ok) {
     return finishRes;
@@ -183,7 +215,7 @@ export async function uploadToPrivateCloud(
     );
   }
 
-  return ok({ fileName: input.fileName, innerName: input.fileName });
+  return ok({ fileName: input.fileName, innerName: innerName ?? input.fileName });
 }
 
 /** List a Private Cloud directory via /api/file/list/query, paginated + normalized. */
@@ -198,7 +230,7 @@ export async function listPrivateCloudFolders(
       url: endpointUrl(profile, PC_LIST_PATH),
       method: 'POST',
       headers: authHeader(deps.token),
-      body: { directoryId, pageNo, pageSize: LIST_PAGE_SIZE },
+      body: { directoryId, pageNo, pageSize: LIST_PAGE_SIZE, order: 'time', sequence: 'desc' },
     });
     if (!res.ok) {
       return res;
