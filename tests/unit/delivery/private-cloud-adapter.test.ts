@@ -143,7 +143,7 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('handles an absolute apply upload URL', async () => {
+  it('handles an absolute apply upload URL on the configured host', async () => {
     const absolute = `${BASE}/api/oss/upload`;
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: absolute } })
@@ -151,6 +151,21 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
       .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
     await uploadToPrivateCloud(deps(http), input());
     expect(http.urls[1]).toBe(absolute);
+  });
+
+  it('re-bases a foreign/internal host the apply response names onto the configured base (D-3)', async () => {
+    // A reverse-proxied server can return an internal origin; the file POST (with
+    // the JWT) must still go ONLY to the user-configured base, never that host.
+    http
+      .on(PC_APPLY_PATH, {
+        status: 200,
+        json: { success: true, fullUploadUrl: 'http://10.0.0.9:9000/api/oss/upload?sig=xyz' },
+      })
+      .on(OSS_PATH, { status: 200, json: { success: true } })
+      .on(PC_FINISH_PATH, { status: 200, json: { success: true } });
+    await uploadToPrivateCloud(deps(http), input());
+    expect(http.urls[1]).toBe(`${BASE}/api/oss/upload?sig=xyz`);
+    expect(new URL(http.urls[1]!).host).toBe('192.168.1.5:8080');
   });
 
   it('sends the correct hex md5 + size on apply and finish', async () => {

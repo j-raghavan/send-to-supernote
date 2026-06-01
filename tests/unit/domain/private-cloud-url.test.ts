@@ -3,6 +3,7 @@ import {
   HTTP_OVER_LAN_WARNING,
   httpWarningFor,
   privateCloudNetworkErrorHint,
+  resolveUploadUrl,
   validateBaseUrl,
 } from '@domain/private-cloud-url';
 
@@ -90,5 +91,45 @@ describe('privateCloudNetworkErrorHint (F8 connect failure guidance)', () => {
   it('falls back to a placeholder host when the URL cannot be parsed', () => {
     const hint = privateCloudNetworkErrorHint('https://');
     expect(hint).toContain('http://<your-server-ip>:19072');
+  });
+});
+
+describe('resolveUploadUrl (F8-FR2 / D-3 reverse-proxy safety)', () => {
+  const BASE = 'http://192.168.1.5:8080';
+
+  it('re-bases a relative apply path onto the configured base', () => {
+    expect(resolveUploadUrl(BASE, '/api/oss/upload')).toBe(`${BASE}/api/oss/upload`);
+  });
+
+  it('adds a leading slash to a relative apply path without one', () => {
+    expect(resolveUploadUrl(BASE, 'api/oss/upload')).toBe(`${BASE}/api/oss/upload`);
+  });
+
+  it('preserves the path AND query of the apply URL', () => {
+    expect(resolveUploadUrl(BASE, '/api/oss/upload?token=abc&exp=9')).toBe(
+      `${BASE}/api/oss/upload?token=abc&exp=9`,
+    );
+  });
+
+  it('keeps a same-host absolute apply URL pointing at the configured base', () => {
+    expect(resolveUploadUrl(BASE, `${BASE}/api/oss/upload`)).toBe(`${BASE}/api/oss/upload`);
+  });
+
+  it('DISCARDS a foreign/internal host the apply response names, keeping only path+query', () => {
+    // A reverse-proxied server may return an internal origin; the file POST (which
+    // carries the JWT) must still go ONLY to the user-configured base.
+    const resolved = resolveUploadUrl(BASE, 'http://10.0.0.9:9000/api/oss/upload?token=secret');
+    expect(resolved).toBe(`${BASE}/api/oss/upload?token=secret`);
+    expect(new URL(resolved).host).toBe('192.168.1.5:8080');
+  });
+
+  it('strips a trailing slash from the base before re-basing', () => {
+    expect(resolveUploadUrl(`${BASE}/`, '/api/oss/upload')).toBe(`${BASE}/api/oss/upload`);
+  });
+
+  it('falls back to treating an unparseable apply URL as a path under the base', () => {
+    // `http://` alone is a malformed absolute URL: the URL constructor throws even
+    // with a base, exercising the defensive fallback.
+    expect(resolveUploadUrl(BASE, 'http://')).toBe(`${BASE}/http://`);
   });
 });

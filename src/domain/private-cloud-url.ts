@@ -50,6 +50,34 @@ export function httpWarningFor(base: ValidBaseUrl): string | undefined {
   return base.isHttp ? HTTP_OVER_LAN_WARNING : undefined;
 }
 
+/**
+ * Resolve the apply-returned upload URL onto the user's CONFIGURED base origin,
+ * keeping ONLY the path + query (e.g. /api/oss/upload?token=...). F8-FR2 / D-3.
+ *
+ * Two reasons the host the apply response names must be discarded:
+ *  - Reverse proxy: self-hosted servers behind a proxy commonly return an upload
+ *    URL pointing at an INTERNAL origin (the app server's LAN address/port) that
+ *    the browser can't reach. Re-basing on the configured base makes it work.
+ *  - Safety: the multipart POST carries the JWT (x-access-token). An apply
+ *    response must never be able to redirect that POST to an arbitrary foreign
+ *    host, so we never trust its host — only its path + query.
+ *
+ * Accepts both absolute apply URLs (host stripped) and relative ones (resolved
+ * against the base). Pure + covered; the sole upload-URL builder for the adapter.
+ */
+export function resolveUploadUrl(baseUrl: string, applyUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  let parsed: URL;
+  try {
+    parsed = new URL(applyUrl, `${base}/`);
+  } catch {
+    // Only a malformed ABSOLUTE apply URL reaches here (a relative path never
+    // throws against a valid base): fall back to a path under the configured base.
+    return `${base}/${applyUrl.replace(/^\/+/, '')}`;
+  }
+  return `${base}${parsed.pathname}${parsed.search}`;
+}
+
 /** Host (without scheme/port) of a base URL, for an `http://host:19072` suggestion. */
 function hostOf(baseUrl: string): string {
   try {

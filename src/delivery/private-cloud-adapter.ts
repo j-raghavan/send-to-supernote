@@ -31,7 +31,7 @@ import {
   privateCloudProfile,
   ROOT_DIRECTORY_ID,
 } from '@domain/delivery';
-import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
+import { privateCloudNetworkErrorHint, resolveUploadUrl } from '@domain/private-cloud-url';
 import type { DeliveryPort, UploadInput, UploadResult } from './delivery-port';
 
 export const PC_APPLY_PATH = '/file/upload/apply';
@@ -103,15 +103,6 @@ function toBlob(bytes: Uint8Array, contentType: string): Blob {
   return new Blob([buffer], { type: contentType });
 }
 
-/** Make the upload URL absolute against the base when apply returns a relative path. */
-function absoluteUploadUrl(deps: PrivateCloudDeps, uploadUrl: string): string {
-  if (uploadUrl.startsWith('http://') || uploadUrl.startsWith('https://')) {
-    return uploadUrl;
-  }
-  const path = uploadUrl.startsWith('/') ? uploadUrl : `/${uploadUrl}`;
-  return `${deps.baseUrl.replace(/\/+$/, '')}${path}`;
-}
-
 /**
  * Run an HttpClient call, mapping a thrown (network/TLS) error to a connection
  * failure. Uses the SAME actionable hint as the connect path (reachability +
@@ -167,7 +158,7 @@ export async function uploadToPrivateCloud(
   const form = new FormData();
   form.append('file', toBlob(input.bytes, input.contentType), input.fileName);
   const uploadRes = await safeRequest(deps, {
-    url: absoluteUploadUrl(deps, uploadUrl),
+    url: resolveUploadUrl(deps.baseUrl, uploadUrl),
     method: 'POST',
     headers: authHeader(deps.token),
     body: form,
