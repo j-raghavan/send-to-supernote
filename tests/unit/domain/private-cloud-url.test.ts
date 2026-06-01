@@ -120,16 +120,29 @@ describe('resolveUploadUrl (F8-FR2 / D-3 reverse-proxy safety)', () => {
     // carries the JWT) must still go ONLY to the user-configured base.
     const resolved = resolveUploadUrl(BASE, 'http://10.0.0.9:9000/api/oss/upload?token=secret');
     expect(resolved).toBe(`${BASE}/api/oss/upload?token=secret`);
-    expect(new URL(resolved).host).toBe('192.168.1.5:8080');
+    expect(new URL(resolved!).host).toBe('192.168.1.5:8080');
   });
 
   it('strips a trailing slash from the base before re-basing', () => {
     expect(resolveUploadUrl(`${BASE}/`, '/api/oss/upload')).toBe(`${BASE}/api/oss/upload`);
   });
 
-  it('falls back to treating an unparseable apply URL as a path under the base', () => {
+  it('returns undefined for a malformed absolute apply URL (diagnosable, not coerced)', () => {
     // `http://` alone is a malformed absolute URL: the URL constructor throws even
-    // with a base, exercising the defensive fallback.
-    expect(resolveUploadUrl(BASE, 'http://')).toBe(`${BASE}/http://`);
+    // with a base. We reject it so the caller can surface "malformed upload URL"
+    // rather than POST to a guessed path that would 404.
+    expect(resolveUploadUrl(BASE, 'http://')).toBeUndefined();
+  });
+
+  it('rejects a non-http(s) absolute apply URL at the boundary (javascript:/data:/file:)', () => {
+    expect(resolveUploadUrl(BASE, 'javascript:alert(1)')).toBeUndefined();
+    expect(resolveUploadUrl(BASE, 'data:text/html,hi')).toBeUndefined();
+    expect(resolveUploadUrl(BASE, 'file:///etc/passwd')).toBeUndefined();
+  });
+
+  it('resolves against an HTTPS base (relative path inherits https)', () => {
+    expect(resolveUploadUrl('https://nas.local', '/api/oss/upload?t=1')).toBe(
+      'https://nas.local/api/oss/upload?t=1',
+    );
   });
 });

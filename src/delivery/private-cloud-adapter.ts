@@ -156,11 +156,20 @@ export async function uploadToPrivateCloud(
   }
   const innerName = applyInnerName(applyEnv.payload, input.fileName);
 
-  // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded path)
+  // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded
+  // path). The host is re-based onto the configured server; an apply URL we
+  // can't resolve to an http(s) path there is a protocol error, not a guess.
+  const resolvedUploadUrl = resolveUploadUrl(deps.baseUrl, uploadUrl);
+  if (resolvedUploadUrl === undefined) {
+    return err({
+      kind: 'protocol',
+      message: 'Private Cloud apply returned a malformed upload URL',
+    });
+  }
   const form = new FormData();
   form.append('file', toBlob(input.bytes, input.contentType), input.fileName);
   const uploadRes = await safeRequest(deps, {
-    url: resolveUploadUrl(deps.baseUrl, uploadUrl),
+    url: resolvedUploadUrl,
     method: 'POST',
     headers: authHeader(deps.token),
     body: form,

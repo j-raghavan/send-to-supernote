@@ -282,6 +282,21 @@ describe('uploadToPrivateCloud (F8-FR2)', () => {
     }
   });
 
+  it('fails with protocol (no upload attempted) when apply returns a non-http upload URL', async () => {
+    http.on(PC_APPLY_PATH, {
+      status: 200,
+      json: { success: true, uploadUrl: 'javascript:alert(1)' },
+    });
+    const result = await uploadToPrivateCloud(deps(http), input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('protocol');
+      expect(result.error.message).toContain('malformed upload URL');
+    }
+    // Only the apply request was made — the file POST was never attempted.
+    expect(http.requests).toHaveLength(1);
+  });
+
   it('fails when the multipart upload returns a non-2xx status', async () => {
     http
       .on(PC_APPLY_PATH, { status: 200, json: { success: true, uploadUrl: OSS_PATH } })

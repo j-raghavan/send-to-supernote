@@ -63,17 +63,31 @@ export function httpWarningFor(base: ValidBaseUrl): string | undefined {
  *    host, so we never trust its host — only its path + query.
  *
  * Accepts both absolute apply URLs (host stripped) and relative ones (resolved
- * against the base). Pure + covered; the sole upload-URL builder for the adapter.
+ * against the base). Returns `undefined` for an apply URL we can't safely resolve
+ * to an http(s) path on the configured base — a malformed absolute URL, or a
+ * non-http(s) scheme (javascript:/data:/file:/...) — so the caller can surface a
+ * clear "malformed upload URL" protocol error instead of POSTing the JWT-bearing
+ * file to a guessed (almost-certainly-404) or unsafe target.
+ *
+ * Compatibility note: this deliberately overrides the host even when apply names
+ * a different, externally reachable host — for self-hosted Private Cloud the only
+ * trusted upload host is the user-configured one (D-3). Pure + covered.
  */
-export function resolveUploadUrl(baseUrl: string, applyUrl: string): string {
+export function resolveUploadUrl(baseUrl: string, applyUrl: string): string | undefined {
   const base = baseUrl.replace(/\/+$/, '');
   let parsed: URL;
   try {
     parsed = new URL(applyUrl, `${base}/`);
   } catch {
-    // Only a malformed ABSOLUTE apply URL reaches here (a relative path never
-    // throws against a valid base): fall back to a path under the configured base.
-    return `${base}/${applyUrl.replace(/^\/+/, '')}`;
+    // Malformed absolute apply URL (a relative path never throws against a valid
+    // base): reject, don't coerce — a guessed path would just 404 confusingly.
+    return undefined;
+  }
+  // Boundary check: only http(s) is a valid upload target. A relative apply path
+  // inherits the base's scheme; an absolute javascript:/data:/file: URL does not
+  // throw above, so it must be rejected here rather than coerced to `${base}/...`.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return undefined;
   }
   return `${base}${parsed.pathname}${parsed.search}`;
 }
