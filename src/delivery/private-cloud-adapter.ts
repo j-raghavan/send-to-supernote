@@ -51,9 +51,11 @@ export interface PrivateCloudDeps {
 }
 
 interface ApplyResponse {
-  /** The upload URL the server returns (commonly /api/oss/upload). */
   uploadUrl?: unknown;
   url?: unknown;
+  fullUploadUrl?: unknown;
+  partUploadUrl?: unknown;
+  innerName?: unknown;
 }
 
 function profileOf(deps: PrivateCloudDeps): ApiProfile {
@@ -66,13 +68,27 @@ function authHeader(token: string): Record<string, string> {
 
 /** Resolve the upload URL the apply step returned (uploadUrl or url field). */
 function applyUploadUrl(payload: ApplyResponse): string | undefined {
+  if (typeof payload.fullUploadUrl === 'string' && payload.fullUploadUrl.length > 0) {
+    return payload.fullUploadUrl;
+  }
+
   if (typeof payload.uploadUrl === 'string' && payload.uploadUrl.length > 0) {
     return payload.uploadUrl;
   }
+
   if (typeof payload.url === 'string' && payload.url.length > 0) {
     return payload.url;
   }
+
   return undefined;
+}
+
+function applyInnerName(payload: ApplyResponse, fallback: string): string {
+  if (typeof payload.innerName === 'string' && payload.innerName.length > 0) {
+    return payload.innerName;
+  }
+
+  return fallback;
 }
 
 /** Wrap bytes in a Blob with a plain ArrayBuffer backing (TS6 typed-array safety). */
@@ -82,13 +98,19 @@ function toBlob(bytes: Uint8Array, contentType: string): Blob {
   return new Blob([buffer], { type: contentType });
 }
 
-/** Make the upload URL absolute against the base when apply returns a relative path. */
+/** Make the upload URL safe and reachable through the configured Private Cloud origin. */
 function absoluteUploadUrl(deps: PrivateCloudDeps, uploadUrl: string): string {
-  if (uploadUrl.startsWith('http://') || uploadUrl.startsWith('https://')) {
-    return uploadUrl;
+  const base = new URL(deps.baseUrl);
+  const returned = new URL(uploadUrl, base);
+
+  // Private Cloud may return an absolute URL using its internal origin/port.
+  // For security, uploads should stay on the user-configured Private Cloud host.
+  // Preserve only the path/search/hash from the server-returned signed URL.
+  if (!returned.pathname.startsWith('/api/oss/upload')) {
+    throw new Error(`Unexpected Private Cloud upload path: ${returned.pathname}`);
   }
-  const path = uploadUrl.startsWith('/') ? uploadUrl : `/${uploadUrl}`;
-  return `${deps.baseUrl.replace(/\/+$/, '')}${path}`;
+
+  return new URL(`${returned.pathname}${returned.search}${returned.hash}`, base).toString();
 }
 
 /**
@@ -141,6 +163,8 @@ export async function uploadToPrivateCloud(
     return err({ kind: 'protocol', message: 'Private Cloud apply returned no upload URL' });
   }
 
+  const innerName = applyInnerName(applyEnv.payload, input.fileName);
+
   // 2. multipart POST of the file to the apply-returned URL (NOT a hardcoded path)
   const form = new FormData();
   form.append('file', toBlob(input.bytes, input.contentType), input.fileName);
@@ -167,12 +191,18 @@ export async function uploadToPrivateCloud(
   }
 
   // 3. finish
-  const finishRes = await safeRequest(deps, {
-    url: endpointUrl(profile, PC_FINISH_PATH),
-    method: 'POST',
-    headers: authHeader(deps.token),
-    body: { directoryId: input.directoryId, fileName: input.fileName, md5, fileSize: size },
-  });
+const finishRes = await safeRequest(deps, {
+  url: endpointUrl(profile, PC_FINISH_PATH),
+  method: 'POST',
+  headers: authHeader(deps.token),
+  body: {
+    directoryId: input.directoryId,
+    fileName: input.fileName,
+    innerName,
+    md5,
+    fileSize: size,
+  },
+});
   if (!finishRes.ok) {
     return finishRes;
   }
@@ -183,7 +213,7 @@ export async function uploadToPrivateCloud(
     );
   }
 
-  return ok({ fileName: input.fileName, innerName: input.fileName });
+  return ok({ fileName: input.fileName, innerName });
 }
 
 /** List a Private Cloud directory via /api/file/list/query, paginated + normalized. */
@@ -198,7 +228,13 @@ export async function listPrivateCloudFolders(
       url: endpointUrl(profile, PC_LIST_PATH),
       method: 'POST',
       headers: authHeader(deps.token),
-      body: { directoryId, pageNo, pageSize: LIST_PAGE_SIZE },
+     body: {
+  directoryId,
+  pageNo,
+  pageSize: LIST_PAGE_SIZE,
+  order: 'time',
+  sequence: 'desc',
+}, 
     });
     if (!res.ok) {
       return res;
