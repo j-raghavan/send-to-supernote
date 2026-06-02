@@ -92,6 +92,23 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4]);
   });
 
+  it('strips a remote <img> from the EPUB body while keeping the text after it', async () => {
+    // Reported failure: a remote lead image a few paragraphs in makes the offline
+    // reader halt, dropping the rest of the article. The remote image must be
+    // gone from bodyHtml and the trailing prose must survive.
+    const html =
+      '<h1>T</h1><p>Lead para</p>' +
+      '<figure><img src="https://ichef.bbci.co.uk/news/480/photo.jpg.webp" alt="x" /></figure>' +
+      '<p>Body that must not be dropped</p>';
+    await renderToBytes(html, resolveRenderOptions('epub'));
+
+    const input = renderEpub.mock.calls[0]![0] as { bodyHtml: string };
+    expect(input.bodyHtml).not.toContain('<img');
+    expect(input.bodyHtml).not.toContain('ichef.bbci.co.uk');
+    expect(input.bodyHtml).toContain('Lead para');
+    expect(input.bodyHtml).toContain('Body that must not be dropped');
+  });
+
   it('prefers the real options.title over the content <h1> for the EPUB', async () => {
     const html = '<h1>Heading In Content</h1><p>body</p>';
     await renderToBytes(html, { ...resolveRenderOptions('epub'), title: '  Real Article Title  ' });
