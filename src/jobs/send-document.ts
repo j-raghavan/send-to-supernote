@@ -22,10 +22,11 @@ import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
 import { type CaptureMode } from '@domain/capture';
 import { contentTypeFor, DEFAULT_RENDER_OPTIONS, type OutputFormat } from '@domain/conversion';
 import { type Target } from '@domain/settings';
-import { type DeliveryFailure, findDocumentFolderId, ROOT_DIRECTORY_ID } from '@domain/delivery';
+import { type DeliveryFailure } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
 import { buildUploadFilename } from '@shared/filename';
 import type { DeliveryPort, UploadInput } from '@delivery/delivery-port';
+import { resolveDestination } from '@delivery/resolve-destination';
 import { type DeliveryOutcome, routeDeliveryFailure } from '@delivery/route-delivery-failure';
 import { canFallbackToPrivate, offerPrivateCloudFallback } from '@delivery/fallback';
 import { DEFAULT_FEATURE_FLAGS, type FeatureFlags, isPathEnabled } from '@shared/feature-flags';
@@ -320,23 +321,6 @@ export async function sendDocument(
   await deps.notifier.notify(noteSent(uploaded.value.fileName));
   await deps.badge.set('idle');
   return ok({ fileName: uploaded.value.fileName, state: finalState as 'done' });
-}
-
-/**
- * Resolve the destination folder id: an explicit choice, else the `Document/`
- * folder at root. Returns `undefined` when no real folder can be resolved (no
- * folder chosen AND the root listing failed OR has no Document folder) — the
- * caller must NOT upload to root, which Supernote always rejects.
- */
-async function resolveDestination(
-  port: DeliveryPort,
-  folderId?: string,
-): Promise<string | undefined> {
-  if (folderId !== undefined && folderId.length > 0) {
-    return folderId;
-  }
-  const root = await port.listFolders(ROOT_DIRECTORY_ID);
-  return root.ok ? findDocumentFolderId(root.value) : undefined;
 }
 
 /** Build the filename, de-duped against the destination's real listing (F6-FR3). */

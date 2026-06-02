@@ -17,6 +17,7 @@ import {
   privateCloudProfile,
   resolvePublicProfile,
   CLOUD_PUBLIC_PROFILE,
+  parseS3Error,
   s3UploadFailureMessage,
 } from '@domain/delivery';
 
@@ -348,6 +349,65 @@ describe('s3UploadFailureMessage (F5-FR2)', () => {
     expect(s3UploadFailureMessage(403, '<Code>  AccessDenied  </Code>')).toBe(
       'S3 upload failed (HTTP 403: AccessDenied)',
     );
+  });
+});
+
+describe('parseS3Error (F5-FR2, Connection Doctor diagnostics)', () => {
+  // A representative SigV4 SignatureDoesNotMatch body: note CanonicalRequest
+  // trails StringToSign/StringToSignBytes, and SignedHeaders has no element of
+  // its own — it is the penultimate line of CanonicalRequest.
+  const sigMismatchBody = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Error><Code>SignatureDoesNotMatch</Code>',
+    '<Message>The request signature we calculated does not match the signature you provided.</Message>',
+    '<AWSAccessKeyId>AKIAEXAMPLE</AWSAccessKeyId>',
+    '<StringToSign>AWS4-HMAC-SHA256\n20260602T000000Z</StringToSign>',
+    '<StringToSignBytes>41 57 53 34</StringToSignBytes>',
+    '<CanonicalRequest>PUT\n/sn-files/obj-abc123\n\n' +
+      'content-type:application/epub+zip\nhost:sn-cloud.s3.amazonaws.com\n' +
+      'x-amz-content-sha256:UNSIGNED-PAYLOAD\nx-amz-date:20260602T000000Z\n\n' +
+      'content-type;host;x-amz-content-sha256;x-amz-date\nUNSIGNED-PAYLOAD</CanonicalRequest>',
+    '<RequestId>REQ123</RequestId><HostId>HOST123</HostId></Error>',
+  ].join('');
+
+  it('captures the code, message, signed headers, and canonical request', () => {
+    const detail = parseS3Error(403, sigMismatchBody);
+    expect(detail.httpStatus).toBe(403);
+    expect(detail.code).toBe('SignatureDoesNotMatch');
+    expect(detail.message).toContain('does not match');
+    expect(detail.signedHeaders).toBe('content-type;host;x-amz-content-sha256;x-amz-date');
+    expect(detail.canonicalRequest).toContain('PUT');
+    expect(detail.canonicalRequest).toContain('content-type:application/epub+zip');
+  });
+
+  it('derives signed headers for a single signed header (no semicolons)', () => {
+    const body =
+      '<CanonicalRequest>PUT\n/k\n\nhost:s3\n\nhost\nUNSIGNED-PAYLOAD</CanonicalRequest>';
+    expect(parseS3Error(403, body).signedHeaders).toBe('host');
+  });
+
+  it('omits signed headers when the canonical request is absent', () => {
+    const detail = parseS3Error(403, '<Code>AccessDenied</Code>');
+    expect(detail.code).toBe('AccessDenied');
+    expect(detail.signedHeaders).toBeUndefined();
+    expect(detail.canonicalRequest).toBeUndefined();
+  });
+
+  it('returns only the status when there is no body', () => {
+    expect(parseS3Error(403, undefined)).toEqual({ httpStatus: 403 });
+  });
+
+  it('drops an empty <Code> and trims a real one', () => {
+    expect(parseS3Error(403, '<Code></Code>').code).toBeUndefined();
+    expect(parseS3Error(403, '<Code>  AccessDenied  </Code>').code).toBe('AccessDenied');
+  });
+
+  it('does not mistake the payload-hash line for signed headers', () => {
+    // The last CanonicalRequest line is the payload hash; only the penultimate
+    // line is signed headers. A hex payload hash must not be read as headers.
+    const hex = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    const body = `<CanonicalRequest>PUT\n/k\n\nhost:s3\n\nhost\n${hex}</CanonicalRequest>`;
+    expect(parseS3Error(403, body).signedHeaders).toBe('host');
   });
 });
 

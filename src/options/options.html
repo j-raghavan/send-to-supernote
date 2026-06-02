@@ -50,6 +50,26 @@
             </div>
             <p id="connect-cloud-hint" class="muted" hidden></p>
           </div>
+
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="doctor">
+              <h3 class="doctor__title">Connection Doctor</h3>
+              <p class="muted">
+                Sends two small test files (PDF and EPUB) to your Document/ folder to confirm
+                delivery really works, not just login.
+              </p>
+              <div class="row">
+                <button id="cloud-doctor-run" class="btn btn--ghost" type="button">
+                  Run Connection Doctor
+                </button>
+                <button id="cloud-doctor-copy" class="btn btn--ghost" type="button" hidden>
+                  Copy diagnostics
+                </button>
+              </div>
+              <pre id="cloud-doctor-result" class="doctor__result" hidden></pre>
+            </div>
+          </details>
         </section>
 
         <section id="folder" class="card">
@@ -104,6 +124,26 @@
               <button id="pc-save" class="btn btn--primary" type="button">Connect server</button>
               <button id="pc-disconnect" class="btn btn--ghost" type="button">Disconnect</button>
             </div>
+
+            <details class="advanced">
+              <summary>Advanced</summary>
+              <div class="doctor">
+                <h3 class="doctor__title">Connection Doctor</h3>
+                <p class="muted">
+                  Sends two small test files (PDF and EPUB) to your Document/ folder to confirm
+                  delivery really works, not just login.
+                </p>
+                <div class="row">
+                  <button id="pc-doctor-run" class="btn btn--ghost" type="button">
+                    Run Connection Doctor
+                  </button>
+                  <button id="pc-doctor-copy" class="btn btn--ghost" type="button" hidden>
+                    Copy diagnostics
+                  </button>
+                </div>
+                <pre id="pc-doctor-result" class="doctor__result" hidden></pre>
+              </div>
+            </details>
           </div>
         </section>
 

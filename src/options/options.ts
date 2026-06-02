@@ -41,6 +41,8 @@ import {
   parseModeChange,
 } from './options-view-model';
 import { captureModeDescription } from '@capture/copy';
+import { type Diagnosis } from '@jobs/connection-doctor';
+import { formatDiagnostics } from '@jobs/diagnostics-report';
 import { api } from '@shared/browser-api';
 
 const store = new ChromeStorageLocal();
@@ -133,6 +135,76 @@ async function render(): Promise<void> {
   renderPrivacy();
   wireConnection();
   wirePrivateCloud();
+  wireConnectionDoctor('cloud', {
+    run: 'cloud-doctor-run',
+    copy: 'cloud-doctor-copy',
+    result: 'cloud-doctor-result',
+  });
+  wireConnectionDoctor('privatecloud', {
+    run: 'pc-doctor-run',
+    copy: 'pc-doctor-copy',
+    result: 'pc-doctor-result',
+  });
+}
+
+/**
+ * Wire the Advanced > Connection Doctor for a target (F7). Runs the real
+ * render -> deliver pipeline in the service worker and shows the result; on
+ * trouble, `Copy diagnostics` puts the paste-ready, secret-free report on the
+ * clipboard so the user can share it instead of opening DevTools. Guarded so a
+ * re-render never stacks duplicate listeners (which would double-send).
+ */
+function wireConnectionDoctor(
+  target: 'cloud' | 'privatecloud',
+  ids: { run: string; copy: string; result: string },
+): void {
+  const runBtn = byId<HTMLButtonElement>(ids.run);
+  const copyBtn = byId<HTMLButtonElement>(ids.copy);
+  const result = byId<HTMLElement>(ids.result);
+  if (!runBtn || !result || runBtn.dataset.wired === '1') {
+    return;
+  }
+  runBtn.dataset.wired = '1';
+  let report = '';
+
+  const showCopy = (visible: boolean): void => {
+    if (copyBtn) copyBtn.hidden = !visible;
+  };
+
+  runBtn.addEventListener('click', () => {
+    runBtn.disabled = true;
+    result.hidden = false;
+    result.textContent = 'Sending test files to Document/ … (PDF, then EPUB)';
+    showCopy(false);
+    void api.runtime
+      .sendMessage({ type: 'troubleshoot', target })
+      .then((res: { ok?: boolean; error?: string; diagnosis?: Diagnosis } | undefined) => {
+        runBtn.disabled = false;
+        if (!res || res.ok !== true || res.diagnosis === undefined) {
+          result.textContent = `Could not run the check: ${res?.error ?? 'unknown error'}`;
+          return;
+        }
+        report = formatDiagnostics(
+          { version: api.runtime.getManifest().version, userAgent: navigator.userAgent },
+          res.diagnosis,
+        );
+        result.textContent = report;
+        showCopy(true);
+      })
+      .catch(() => {
+        runBtn.disabled = false;
+        result.textContent = 'Could not run the check.';
+      });
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    void navigator.clipboard.writeText(report).then(() => {
+      copyBtn.textContent = 'Copied';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy diagnostics';
+      }, 1500);
+    });
+  });
 }
 
 /** Notify the service worker that a target (re)connected, so F9 auto-retries (F9-FR1). */

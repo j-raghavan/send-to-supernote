@@ -340,3 +340,52 @@ body {
 [hidden] {
   display: none !important;
 }
+
+/* Advanced disclosure — collapsed by default; a quiet, no-op row for normal
+   users, and the one place to point a stuck user ("Settings > Advanced"). */
+.advanced {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  list-style: revert;
+}
+
+.advanced > summary:hover {
+  color: var(--ink);
+}
+
+.doctor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.doctor__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The diagnostics output — monospace, scrollable, selectable for copy. */
+.doctor__result {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}

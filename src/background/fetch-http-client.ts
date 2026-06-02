@@ -59,9 +59,10 @@ async function parseJsonSafely(response: Response): Promise<unknown> {
 async function safeText(response: Response): Promise<string | undefined> {
   try {
     const text = await response.text();
-    // Bound it — an error body is small (the S3 XML is well under this); never
-    // let an unexpected large body bloat the surfaced message.
-    return text.length > 0 ? text.slice(0, 2048) : undefined;
+    // Bound it — an error body is small. The cap is generous enough to retain
+    // S3's full `<CanonicalRequest>` (it trails `StringToSignBytes` in the XML,
+    // so a tight cap would clip it) without letting an unexpected body bloat.
+    return text.length > 0 ? text.slice(0, 8192) : undefined;
   } catch {
     return undefined;
   }

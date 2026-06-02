@@ -45,9 +45,12 @@ import {
   history,
   buildDeps,
   deliveryFactory,
+  loadCredentials,
+  runTroubleshoot,
   clearExpiredFlag,
   registerOriginStrip,
 } from './composition';
+import { type Diagnosis } from '@jobs/connection-doctor';
 
 async function runSend(
   tabId: number,
@@ -56,16 +59,10 @@ async function runSend(
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const target = settings.target;
-  const cloudToken = (await tokens.getToken()) ?? '';
+  const { cloudToken, privateCloud } = await loadCredentials();
   // Prefill the reconnect form with the FAILING target's account (F2-FR4/F8-FR6).
   const account =
     target === 'privatecloud' ? await privateStore.getAccount() : await tokens.getAccount();
-  const pcBaseUrl = await privateStore.getBaseUrl();
-  const pcToken = await privateStore.getToken();
-  const privateCloud =
-    pcBaseUrl !== undefined && pcToken !== undefined
-      ? { baseUrl: pcBaseUrl, token: pcToken }
-      : undefined;
   const pcFolderId = await privateStore.getFolderId();
   const flags = normalizeFlags(await store.get(StorageKeys.featureFlags));
   const deps = buildDeps({
@@ -156,13 +153,7 @@ function pdfTitleFromUrl(url: string): string {
 
 /** Retry retained jobs after a target reconnects (F9-FR1). */
 async function retryAfterReconnect(target: Target): Promise<void> {
-  const cloudToken = (await tokens.getToken()) ?? '';
-  const pcBaseUrl = await privateStore.getBaseUrl();
-  const pcToken = await privateStore.getToken();
-  const privateCloud =
-    pcBaseUrl !== undefined && pcToken !== undefined
-      ? { baseUrl: pcBaseUrl, token: pcToken }
-      : undefined;
+  const { cloudToken, privateCloud } = await loadCredentials();
   await retryPending(
     {
       queue,
@@ -183,13 +174,7 @@ async function retryAfterReconnect(target: Target): Promise<void> {
  */
 async function healthCheckOnConnect(target: Target): Promise<void> {
   try {
-    const cloudToken = (await tokens.getToken()) ?? '';
-    const pcBaseUrl = await privateStore.getBaseUrl();
-    const pcToken = await privateStore.getToken();
-    const privateCloud =
-      pcBaseUrl !== undefined && pcToken !== undefined
-        ? { baseUrl: pcBaseUrl, token: pcToken }
-        : undefined;
+    const { cloudToken, privateCloud } = await loadCredentials();
     const port = deliveryFactory({
       cloudToken,
       ...(privateCloud !== undefined ? { privateCloud } : {}),
@@ -477,6 +462,7 @@ api.runtime.onMessage.addListener(
       detail?: string;
       pending?: boolean;
       kind?: 'network' | 'auth';
+      diagnosis?: Diagnosis;
     }) => void,
   ): boolean | undefined => {
     if (typeof message !== 'object' || message === null) {
@@ -496,6 +482,10 @@ api.runtime.onMessage.addListener(
     if (msg.type === 'reconnected' && msg.target !== undefined) {
       void retryAfterReconnect(msg.target);
       return undefined;
+    }
+    if (msg.type === 'troubleshoot' && msg.target !== undefined) {
+      void runTroubleshoot(msg.target).then(sendResponse);
+      return true; // keep the channel open for the async diagnosis
     }
     if (msg.type === 'connect-cloud') {
       void beginCloudConnect().then(sendResponse);

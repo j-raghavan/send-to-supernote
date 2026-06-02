@@ -18,6 +18,12 @@
  */
 /* c8 ignore start */
 import { type SendDocumentDeps } from '@jobs/send-document';
+import {
+  type ConnectionDoctorDeps,
+  type Diagnosis,
+  runConnectionDoctor,
+  troubleshootPrecondition,
+} from '@jobs/connection-doctor';
 import { JobQueue } from '@jobs/job-queue';
 import { JobHistory } from '@jobs/job-history';
 import { SettingsStore } from '@settings/settings-store';
@@ -243,5 +249,68 @@ export function deliveryFactory(ctx: {
       cloud: { profile: DEFAULT_PUBLIC_PROFILE, token: ctx.cloudToken },
       ...(ctx.privateCloud !== undefined ? { privateCloud: ctx.privateCloud } : {}),
     });
+}
+
+/**
+ * Build the Connection Doctor deps (Advanced > Troubleshoot connection): the
+ * same delivery factory used for retry, the build-target renderer, and the
+ * shared blob transfer. No tab/capture is needed — the Doctor renders a fixed
+ * test document, so it reuses the offscreen/direct renderer directly.
+ */
+export function buildConnectionDoctorDeps(ctx: {
+  cloudToken: string;
+  privateCloud?: PrivateTargetConfig;
+}): ConnectionDoctorDeps {
+  return {
+    resolveDelivery: deliveryFactory(ctx),
+    render: { renderer: makeRenderer() },
+    blobs,
+  };
+}
+
+/** Load the stored cloud token + Private Cloud config (when configured). */
+export async function loadCredentials(): Promise<{
+  cloudToken: string;
+  privateCloud?: PrivateTargetConfig;
+}> {
+  const cloudToken = (await tokens.getToken()) ?? '';
+  const pcBaseUrl = await privateStore.getBaseUrl();
+  const pcToken = await privateStore.getToken();
+  const privateCloud =
+    pcBaseUrl !== undefined && pcToken !== undefined
+      ? { baseUrl: pcBaseUrl, token: pcToken }
+      : undefined;
+  return { cloudToken, ...(privateCloud !== undefined ? { privateCloud } : {}) };
+}
+
+/**
+ * Connection Doctor handler (Options > Advanced > Troubleshoot connection): run
+ * the real render -> apply -> PUT -> finish pipeline for a tiny PDF + EPUB so
+ * "connected" is proven by an actual delivery. Guards the precondition — a target
+ * with no stored credentials is NOT probed, because resolveDelivery would
+ * otherwise let the public adapter silently stand in for an unconfigured Private
+ * Cloud and mislabel the result. Reuses stored creds; never throws.
+ */
+export async function runTroubleshoot(
+  target: Target,
+): Promise<{ ok: boolean; diagnosis?: Diagnosis; error?: string }> {
+  const { cloudToken, privateCloud } = await loadCredentials();
+  const blocked = troubleshootPrecondition(target, {
+    cloudToken,
+    privateCloudConfigured: privateCloud !== undefined,
+  });
+  if (blocked !== undefined) {
+    return { ok: false, error: blocked };
+  }
+  try {
+    const deps = buildConnectionDoctorDeps({
+      cloudToken,
+      ...(privateCloud !== undefined ? { privateCloud } : {}),
+    });
+    const diagnosis = await runConnectionDoctor(deps, target);
+    return { ok: true, diagnosis };
+  } catch (thrown) {
+    return { ok: false, error: thrown instanceof Error ? thrown.message : 'Troubleshoot failed' };
+  }
 }
 /* c8 ignore stop */
