@@ -239,6 +239,12 @@ export interface DeliveryFailure {
   /** Application error code from the envelope (e.g. E0401), when present. */
   errorCode?: string;
   message: string;
+  /**
+   * Structured S3 PUT error detail (public Cloud), captured for the Connection
+   * Doctor diagnostics so a `SignatureDoesNotMatch` names the exact signed
+   * headers / canonical request S3 saw, not just the HTTP status.
+   */
+  s3?: S3ErrorDetail;
 }
 
 /** Classify a non-success delivery response into a canonical failure. */
@@ -261,10 +267,63 @@ export function classifyDeliveryFailure(
   };
 }
 
-// S3 reports a failed PUT with an XML body: `<Error><Code>…</Code>
-// <Message>…</Message>…</Error>`. These extract those fields without a DOM.
-const S3_CODE = /<Code>([^<]+)<\/Code>/;
-const S3_MESSAGE = /<Message>([^<]+)<\/Message>/;
+// S3 reports a failed PUT with an XML body:
+// `<Error><Code>…</Code><Message>…</Message>…<CanonicalRequest>…</CanonicalRequest></Error>`.
+// These extract those fields without a DOM (the body is small, well-formed XML).
+// `[^<]*` (not `+`) so an empty `<Code></Code>` matches as "" and is dropped.
+const S3_CODE = /<Code>([^<]*)<\/Code>/;
+const S3_MESSAGE = /<Message>([^<]*)<\/Message>/;
+const S3_CANONICAL_REQUEST = /<CanonicalRequest>([\s\S]*?)<\/CanonicalRequest>/;
+// A SigV4 SignedHeaders list: lowercase ';'-joined header names, e.g.
+// `host;x-amz-content-sha256;x-amz-date`. S3 has no standalone element for it —
+// it is the penultimate line of the canonical request (the last line is the
+// payload hash), so we read it by position and validate the shape.
+const S3_SIGNED_HEADERS_LINE = /^[a-z0-9-]+(?:;[a-z0-9-]+)*$/;
+
+/**
+ * Structured detail of a failed S3 PUT, parsed from AWS's XML error body. Carries
+ * the machine `code` (e.g. `SignatureDoesNotMatch`), human `message`, and — the
+ * decisive bit for a signature mismatch — the `signedHeaders` and full
+ * `canonicalRequest` S3 reconstructed, so the Connection Doctor can name the exact
+ * header that diverged from what the server signed.
+ */
+export interface S3ErrorDetail {
+  httpStatus: number;
+  code?: string;
+  message?: string;
+  signedHeaders?: string;
+  canonicalRequest?: string;
+}
+
+/** The SignedHeaders list lives as the penultimate line of the canonical request. */
+function extractSignedHeaders(canonicalRequest: string): string | undefined {
+  const lines = canonicalRequest.split('\n');
+  const candidate = lines[lines.length - 2]?.trim();
+  return candidate !== undefined && S3_SIGNED_HEADERS_LINE.test(candidate) ? candidate : undefined;
+}
+
+/**
+ * Parse an S3 PUT error body into structured detail (F5-FR2). Tolerant of an
+ * absent/unparseable body — every field beyond `httpStatus` is optional and is
+ * only included when actually present and non-empty.
+ */
+export function parseS3Error(httpStatus: number, bodyText?: string): S3ErrorDetail {
+  if (bodyText === undefined) {
+    return { httpStatus };
+  }
+  const code = S3_CODE.exec(bodyText)?.[1]?.trim();
+  const message = S3_MESSAGE.exec(bodyText)?.[1]?.trim();
+  const canonicalRequest = S3_CANONICAL_REQUEST.exec(bodyText)?.[1]?.trim();
+  const signedHeaders =
+    canonicalRequest !== undefined ? extractSignedHeaders(canonicalRequest) : undefined;
+  return {
+    httpStatus,
+    ...(code !== undefined && code.length > 0 ? { code } : {}),
+    ...(message !== undefined && message.length > 0 ? { message } : {}),
+    ...(signedHeaders !== undefined ? { signedHeaders } : {}),
+    ...(canonicalRequest !== undefined && canonicalRequest.length > 0 ? { canonicalRequest } : {}),
+  };
+}
 
 /**
  * Build the message for a failed S3 PUT (F5-FR2). Promotes AWS's machine code
@@ -274,13 +333,12 @@ const S3_MESSAGE = /<Message>([^<]+)<\/Message>/;
  * absent or unparseable.
  */
 export function s3UploadFailureMessage(httpStatus: number, bodyText?: string): string {
-  const code = bodyText !== undefined ? S3_CODE.exec(bodyText)?.[1]?.trim() : undefined;
+  const { code, message } = parseS3Error(httpStatus, bodyText);
   const head =
-    code !== undefined && code.length > 0
+    code !== undefined
       ? `S3 upload failed (HTTP ${String(httpStatus)}: ${code})`
       : `S3 upload failed (HTTP ${String(httpStatus)})`;
-  const detail = bodyText !== undefined ? S3_MESSAGE.exec(bodyText)?.[1]?.trim() : undefined;
-  return detail !== undefined && detail.length > 0 ? `${head} ${detail}` : head;
+  return message !== undefined ? `${head} ${message}` : head;
 }
 
 /** Basename of a URL path — `innerName` for the finish step (F5-FR2). */

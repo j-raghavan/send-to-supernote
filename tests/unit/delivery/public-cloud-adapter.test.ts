@@ -180,6 +180,27 @@ describe('uploadToCloud (F5-FR2)', () => {
     }
   });
 
+  it('attaches structured S3 detail (code + canonical request) for diagnostics', async () => {
+    http
+      .on(APPLY_PATH, { status: 200, json: { success: true, url: S3_URL } })
+      .on('s3.amazonaws.com', {
+        status: 403,
+        bodyText:
+          '<?xml version="1.0"?><Error><Code>SignatureDoesNotMatch</Code>' +
+          '<Message>does not match</Message>' +
+          '<CanonicalRequest>PUT\n/k\n\ncontent-type:application/pdf\nhost:s3\n\n' +
+          'content-type;host\nUNSIGNED-PAYLOAD</CanonicalRequest></Error>',
+      });
+    const result = await uploadToCloud(deps(http), input());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.s3?.httpStatus).toBe(403);
+      expect(result.error.s3?.code).toBe('SignatureDoesNotMatch');
+      expect(result.error.s3?.signedHeaders).toBe('content-type;host');
+      expect(result.error.s3?.canonicalRequest).toContain('content-type:application/pdf');
+    }
+  });
+
   it('omits S3 Authorization/date headers when apply does not return them', async () => {
     http
       .on(APPLY_PATH, { status: 200, json: { success: true, url: S3_URL } })

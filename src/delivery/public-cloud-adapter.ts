@@ -23,6 +23,7 @@ import {
   type Folder,
   normalizeEnvelope,
   parseFolderList,
+  parseS3Error,
   ROOT_DIRECTORY_ID,
   s3UploadFailureMessage,
 } from '@domain/delivery';
@@ -113,10 +114,13 @@ export async function uploadToCloud(
   });
   if (putRes.status < 200 || putRes.status >= 300) {
     // Surface AWS's XML error code (e.g. SignatureDoesNotMatch / RequestTimeTooSkewed)
-    // when present so a 403 is actionable rather than opaque.
+    // when present so a 403 is actionable rather than opaque; also keep the
+    // structured detail (signed headers + canonical request) for the Connection
+    // Doctor diagnostics.
     return err({
       kind: 'protocol',
       message: s3UploadFailureMessage(putRes.status, putRes.bodyText),
+      s3: parseS3Error(putRes.status, putRes.bodyText),
     });
   }
 
