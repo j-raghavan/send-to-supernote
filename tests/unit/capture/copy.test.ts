@@ -10,23 +10,13 @@ describe('capture-mode copy (F4-FR5)', () => {
     expect(captureModeDescription('reader').toLowerCase()).toContain('recommended');
   });
 
-  it('labels Full Page (Image) (Phase 3)', () => {
-    expect(captureModeLabel('fullpage')).toBe('Full Page (Image)');
+  it('labels Full Page', () => {
+    expect(captureModeLabel('fullpage')).toBe('Full Page');
   });
 
-  it('describes the Full Page (Image) mode as a PDF-only image of the page', () => {
+  it('describes the Full Page mode', () => {
     const desc = captureModeDescription('fullpage');
     expect(desc.length).toBeGreaterThan(0);
-    expect(desc).toContain('PDF only');
-  });
-
-  it('labels Full Page (HTML) (Phase 3)', () => {
-    expect(captureModeLabel('fullpage-html')).toBe('Full Page (HTML)');
-  });
-
-  it('describes the Full Page (HTML) mode as reflowable EPUB-capable HTML (Phase 3)', () => {
-    const desc = captureModeDescription('fullpage-html');
-    expect(desc.length).toBeGreaterThan(0);
-    expect(desc.toLowerCase()).toMatch(/epub|reflowable/);
+    expect(desc.toLowerCase()).toContain('page');
   });
 });

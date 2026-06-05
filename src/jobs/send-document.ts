@@ -251,7 +251,7 @@ export async function sendDocument(
     // filename resolves via the <hostname>-<date> fallback (F6-AC2b).
     title = '';
     blobHandle = stitched.handle;
-  } else if (req.mode === 'reader') {
+  } else {
     // capturing
     await deps.notifier.notify(NOTE_CAPTURING);
     const captured = await captureReader(deps.capture);
@@ -262,24 +262,6 @@ export async function sendDocument(
     }
 
     const tail = await renderCaptured(deps, captured.value, req.format);
-    if (!tail.ok) return tail;
-    ({ bytes, contentType, title, blobHandle } = tail.value);
-  } else {
-    // Full Page (HTML) (Issue 2): capture the whole DOM with canvas-inlined
-    // images (no Readability), then render to the requested format. No empty-
-    // article guard (a sparse page is still sent), and it honors req.format so
-    // EPUB works here — unlike the screenshot 'fullpage' branch.
-    await deps.notifier.notify(NOTE_CAPTURING);
-    let captured: CapturedDocument;
-    try {
-      captured = await deps.capture.extractor.extractFullPageHtml();
-    } catch (thrown) {
-      const message = thrown instanceof Error ? thrown.message : 'Could not capture the page.';
-      await deps.notifier.notify(noteCaptureFailed(message));
-      await deps.badge.set('error');
-      return fail('capture', message, 'failed');
-    }
-    const tail = await renderCaptured(deps, captured, req.format);
     if (!tail.ok) return tail;
     ({ bytes, contentType, title, blobHandle } = tail.value);
   }
@@ -329,9 +311,9 @@ interface RenderedTail {
 }
 
 /**
- * Shared render tail for the reader and fullpage-html paths: render the captured
- * document to the requested format and read its bytes back, surfacing a render
- * failure as a notified SendError. No capture, no empty-article guard.
+ * Render tail for the reader path: render the captured document to the requested
+ * format and read its bytes back, surfacing a render failure as a notified
+ * SendError. No capture step here (the caller captures first).
  */
 async function renderCaptured(
   deps: SendDocumentDeps,

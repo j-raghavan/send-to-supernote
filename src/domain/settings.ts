@@ -37,11 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   confirmFilename: false,
 };
 
-const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>([
-  'reader',
-  'fullpage',
-  'fullpage-html',
-]);
+const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>(['reader', 'fullpage']);
 const OUTPUT_FORMATS: ReadonlySet<string> = new Set<OutputFormat>(['pdf', 'epub']);
 const TARGETS: ReadonlySet<string> = new Set<Target>(['cloud', 'privatecloud']);
 

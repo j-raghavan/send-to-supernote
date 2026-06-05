@@ -10,10 +10,6 @@ describe('capture-format authority (Issue 3)', () => {
     it('fullpage allows pdf only', () => {
       expect(allowedFormats('fullpage')).toEqual(['pdf']);
     });
-
-    it('fullpage-html allows pdf and epub (Phase 3)', () => {
-      expect(allowedFormats('fullpage-html')).toEqual(['pdf', 'epub']);
-    });
   });
 
   describe('isFormatAllowed', () => {
@@ -25,11 +21,6 @@ describe('capture-format authority (Issue 3)', () => {
     it('fullpage permits pdf but not epub', () => {
       expect(isFormatAllowed('fullpage', 'pdf')).toBe(true);
       expect(isFormatAllowed('fullpage', 'epub')).toBe(false);
-    });
-
-    it('fullpage-html permits both epub and pdf (Phase 3)', () => {
-      expect(isFormatAllowed('fullpage-html', 'epub')).toBe(true);
-      expect(isFormatAllowed('fullpage-html', 'pdf')).toBe(true);
     });
   });
 
@@ -45,11 +36,6 @@ describe('capture-format authority (Issue 3)', () => {
 
     it('leaves an already-allowed fullpage pdf unchanged', () => {
       expect(coerceFormat('fullpage', 'pdf')).toBe('pdf');
-    });
-
-    it('honors both formats for fullpage-html (Phase 3)', () => {
-      expect(coerceFormat('fullpage-html', 'epub')).toBe('epub');
-      expect(coerceFormat('fullpage-html', 'pdf')).toBe('pdf');
     });
   });
 });

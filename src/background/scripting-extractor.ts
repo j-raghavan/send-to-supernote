@@ -4,25 +4,25 @@
  * CRITICAL MV3 constraint: a `func` passed to `chrome.scripting.executeScript`
  * is serialized into the PAGE, so it must be fully self-contained — it canNOT
  * reference any bundled import (those live only in this SW bundle and are
- * undefined in the page). So the page only does what plain DOM can do: return
- * its rendered HTML. Full Page needs nothing more. Reader needs Readability,
- * which is not in the page, so the raw HTML is handed to the offscreen document
- * (which has a DOM + bundled Readability) to parse. Coverage-excluded.
+ * undefined in the page). So the page only does what plain DOM can do: capture
+ * its rendered HTML (and inline loaded images). Reader needs Readability, which
+ * is not in the page, so the raw HTML is handed off-page (offscreen document on
+ * Chrome / event page on Firefox) to parse. Coverage-excluded.
  */
 /* c8 ignore start */
 import type { Extractor } from '@shared/ports';
-import type { CapturedDocument, ReaderExtract } from '@domain/capture';
+import type { ReaderExtract } from '@domain/capture';
 import type { ReaderParser } from './reader-parser';
 import { api } from '@shared/browser-api';
 import { applyInlinedImages } from '@conversion/apply-inline-images';
 
 /**
- * Self-contained page-capture func (Issue 1 / Issue 2). This is serialized into
- * the page by `chrome.scripting.executeScript`, so it MUST reference no bundled
- * import and no outer variable — only plain DOM/canvas globals. It snapshots
- * each already-decoded `<img>` bitmap to a canvas and returns it as a `data:`
- * URI (the only place loaded bitmaps exist), so the offscreen/direct renderer
- * never has to load live (often cross-origin) image URLs.
+ * Self-contained page-capture func (Issue 1). This is serialized into the page by
+ * `chrome.scripting.executeScript`, so it MUST reference no bundled import and no
+ * outer variable — only plain DOM/canvas globals. It snapshots each
+ * already-decoded `<img>` bitmap to a canvas and returns it as a `data:` URI (the
+ * only place loaded bitmaps exist), so the offscreen/direct renderer never has to
+ * load live (often cross-origin) image URLs.
  *
  * Encoding is PNG-always (no quality arg, no JPEG): PNG preserves alpha, which
  * matters for e-ink rendering. Caps: skip images over 4 megapixels, and stop
@@ -36,20 +36,10 @@ import { applyInlinedImages } from '@conversion/apply-inline-images';
  * (Wikipedia/Wikimedia and most CDNs do). Hosts that send no CORS header still
  * taint and are skipped. This never sends credentials and needs no extra
  * permission. The func is async because the retry awaits an image load.
- *
- * `opts.fullPage` selects the returned HTML. Reader (false) returns the whole
- * `documentElement` outerHTML and Readability cleans it off-page. Full Page HTML
- * (true) has NO Readability pass, so this returns a SANITIZED body: a <body>
- * clone with non-content/executable elements removed (script/style/noscript/
- * template/iframe/object/embed/link) and form-control values cleared, so inline
- * script source, CSS text, <head> metadata, and typed/hidden field values never
- * leak into the rendered EPUB/PDF. It returns body innerHTML (not outerHTML) to
- * avoid a double-<body> when the EPUB path re-wraps it.
  */
-async function capturePageWithImages(opts: { fullPage: boolean }): Promise<{
+async function capturePageWithImages(): Promise<{
   html: string;
   url: string;
-  title: string;
   images: { src: string; srcset?: string; dataUri: string }[];
 }> {
   const images: { src: string; srcset?: string; dataUri: string }[] = [];
@@ -127,38 +117,9 @@ async function capturePageWithImages(opts: { fullPage: boolean }): Promise<{
     images.push({ src: raw, dataUri, ...(srcset ? { srcset } : {}) });
   }
 
-  let html: string;
-  if (opts.fullPage && document.body) {
-    const body = document.body.cloneNode(true) as HTMLElement;
-    body
-      .querySelectorAll('script,style,noscript,template,iframe,object,embed,link')
-      .forEach((el) => el.remove());
-    // Drop server-set form value attributes (e.g. hidden CSRF tokens) from the
-    // capture, and strip event-handler attributes (inert in a static document).
-    body.querySelectorAll('*').forEach((el) => {
-      el.removeAttribute('value');
-      for (const name of el.getAttributeNames()) {
-        if (name.toLowerCase().startsWith('on')) {
-          el.removeAttribute(name);
-        }
-      }
-    });
-    // Remove comment nodes — they can carry dev tokens/secrets.
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
-    const comments: Node[] = [];
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      comments.push(node);
-    }
-    comments.forEach((node) => node.parentNode?.removeChild(node));
-    html = body.innerHTML;
-  } else {
-    html = document.documentElement.outerHTML;
-  }
-
   return {
-    html,
+    html: document.documentElement.outerHTML,
     url: document.baseURI,
-    title: document.title,
     images,
   };
 }
@@ -172,26 +133,18 @@ export class ScriptingExtractor implements Extractor {
   async extractReader(): Promise<ReaderExtract> {
     // Self-contained page capture (no bundled imports) that also inlines loaded
     // image bitmaps, then inline them into the HTML and parse off-page.
-    const raw = await this.run(capturePageWithImages, { fullPage: false });
+    const raw = await this.run(capturePageWithImages);
     const html = applyInlinedImages(raw.html, raw.images);
     console.warn(`[send-to-supernote] captured html: ${html.length} chars from ${raw.url}`);
     return this.reader.extract(html, raw.url);
   }
 
-  async extractFullPageHtml(): Promise<CapturedDocument> {
-    const raw = await this.run(capturePageWithImages, { fullPage: true });
-    const html = applyInlinedImages(raw.html, raw.images);
-    console.warn(`[send-to-supernote] captured full page: ${html.length} chars from ${raw.url}`);
-    return { mode: 'fullpage-html', title: raw.title, html };
-  }
-
-  private async run<T, A>(func: (arg: A) => T | Promise<T>, arg: A): Promise<T> {
+  private async run<T>(func: () => T | Promise<T>): Promise<T> {
     // `func` may be async; executeScript awaits its promise and returns the
     // resolved value as `injection.result` (typed as Awaited<...>).
     const [injection] = await api.scripting.executeScript({
       target: { tabId: this.tabId },
       func,
-      args: [arg],
     });
     const result = injection?.result;
     if (result === null || result === undefined) {

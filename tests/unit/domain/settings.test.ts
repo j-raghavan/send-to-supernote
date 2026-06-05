@@ -11,10 +11,6 @@ describe('settings guards (FP1-FR1)', () => {
       expect(isCaptureMode('fullpage')).toBe(true);
     });
 
-    it('accepts fullpage-html (Phase 3)', () => {
-      expect(isCaptureMode('fullpage-html')).toBe(true);
-    });
-
     it('rejects unknown strings and non-strings', () => {
       expect(isCaptureMode('bogus')).toBe(false);
       expect(isCaptureMode('')).toBe(false);
