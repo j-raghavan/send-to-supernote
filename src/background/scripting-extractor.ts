@@ -35,7 +35,9 @@ import { applyInlinedImages } from '@conversion/apply-inline-images';
  * un-tainted canvas — for any host that sends `Access-Control-Allow-Origin`
  * (Wikipedia/Wikimedia and most CDNs do). Hosts that send no CORS header still
  * taint and are skipped. This never sends credentials and needs no extra
- * permission. The func is async because the retry awaits an image load.
+ * permission. The same anonymous reload also DECODES lazy / below-the-fold
+ * images that weren't ready at capture time (no scrolling required). The func is
+ * async because the reload awaits an image load.
  */
 async function capturePageWithImages(): Promise<{
   html: string;
@@ -77,6 +79,11 @@ async function capturePageWithImages(): Promise<{
       probe.src = url;
     });
 
+  const overCap = (w: number, h: number): boolean => w * h > MAX_PIXELS;
+
+  // Only <img> elements are inlined. KNOWN LIMITATIONS (skipped): srcset-only /
+  // <picture><source> images that carry no `src` attribute (nothing for the
+  // off-page rewrite to match), and CSS background-images.
   for (const img of Array.from(document.images)) {
     // Key on the RAW attribute value (matches apply-inline-images.ts).
     const raw = img.getAttribute('src');
@@ -86,24 +93,33 @@ async function capturePageWithImages(): Promise<{
     if (seen.has(raw)) {
       continue; // de-dupe identical raw srcs (don't re-encode)
     }
-    // Lazy/undecoded guard: only encode fully-loaded, non-zero bitmaps.
-    if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) {
-      skipped += 1; // below-the-fold / lazy: present but not decoded
-      continue;
-    }
-    if (img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+
+    const decoded = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+    if (decoded && overCap(img.naturalWidth, img.naturalHeight)) {
       skipped += 1;
       continue;
     }
 
     let dataUri: string | undefined;
-    try {
-      dataUri = encodePng(img, img.naturalWidth, img.naturalHeight);
-    } catch {
-      // Tainted (cross-origin, loaded without CORS). Retry via an anonymous
-      // reload; succeeds only if the host sends Access-Control-Allow-Origin.
+    if (decoded) {
+      try {
+        dataUri = encodePng(img, img.naturalWidth, img.naturalHeight);
+      } catch {
+        dataUri = undefined; // tainted → fresh anonymous reload below
+      }
+    }
+    if (dataUri === undefined) {
+      // Either NOT yet decoded (lazy / below-the-fold) or tainted: reload the
+      // real URL fresh and anonymously. This decodes lazy images without
+      // scrolling, and for CORS hosts yields an un-tainted canvas. A non-CORS
+      // cross-origin image still taints and is skipped.
       const probe = await loadAnonymous(img.currentSrc || raw);
-      if (probe && probe.naturalWidth > 0 && probe.naturalHeight > 0) {
+      if (
+        probe &&
+        probe.naturalWidth > 0 &&
+        probe.naturalHeight > 0 &&
+        !overCap(probe.naturalWidth, probe.naturalHeight)
+      ) {
         try {
           dataUri = encodePng(probe, probe.naturalWidth, probe.naturalHeight);
         } catch {
@@ -112,7 +128,7 @@ async function capturePageWithImages(): Promise<{
       }
     }
     if (dataUri === undefined || !dataUri.startsWith('data:image/')) {
-      skipped += 1; // cross-origin without CORS, or unencodable
+      skipped += 1; // lazy load failed, no CORS, over the pixel cap, or unencodable
       continue;
     }
     if (inlinedBytes + dataUri.length > MAX_BYTES) {
