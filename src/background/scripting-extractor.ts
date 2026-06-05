@@ -101,8 +101,23 @@ function capturePageWithImages(opts: { fullPage: boolean }): {
     body
       .querySelectorAll('script,style,noscript,template,iframe,object,embed,link')
       .forEach((el) => el.remove());
-    // Drop typed/hidden form values (CSRF tokens, entered text) from the capture.
-    body.querySelectorAll('input,textarea').forEach((el) => el.removeAttribute('value'));
+    // Drop server-set form value attributes (e.g. hidden CSRF tokens) from the
+    // capture, and strip event-handler attributes (inert in a static document).
+    body.querySelectorAll('*').forEach((el) => {
+      el.removeAttribute('value');
+      for (const name of el.getAttributeNames()) {
+        if (name.toLowerCase().startsWith('on')) {
+          el.removeAttribute(name);
+        }
+      }
+    });
+    // Remove comment nodes — they can carry dev tokens/secrets.
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+    const comments: Node[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      comments.push(node);
+    }
+    comments.forEach((node) => node.parentNode?.removeChild(node));
     html = body.innerHTML;
   } else {
     html = document.documentElement.outerHTML;
