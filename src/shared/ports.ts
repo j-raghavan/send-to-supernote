@@ -9,7 +9,7 @@
  * Ports are added here as the FRs that need them are implemented; this file is
  * the single home for all of them.
  */
-import type { ReaderExtract } from '@domain/capture';
+import type { CapturedDocument, ReaderExtract } from '@domain/capture';
 import type { RenderOptions } from '@domain/conversion';
 import type { StitchGeometry, TileRef } from '@conversion/fullpage-stitch-core';
 
@@ -168,6 +168,12 @@ export interface Clock {
 export interface Extractor {
   /** Extract the readable article from the active tab (F3-FR1). */
   extractReader(): Promise<ReaderExtract>;
+  /**
+   * Capture the WHOLE page as a self-contained CapturedDocument (Issue 2):
+   * canvas-inlined images, no Readability stripping. Rendered to EPUB/PDF via the
+   * reader pipeline. Throws if the page cannot be read (mirrors extractReader).
+   */
+  extractFullPageHtml(): Promise<CapturedDocument>;
 }
 
 /** Result of a render: a handle to the stored blob plus its byte size. */

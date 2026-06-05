@@ -8,10 +8,13 @@
  */
 
 /**
- * Capture mode (FP1-FR1). Reader runs Readability reflow; Full Page screenshots
- * the whole scrollable document as-is (scroll + stitch → image-based PDF).
+ * Capture mode (FP1-FR1). Reader runs Readability reflow; 'fullpage' screenshots
+ * the whole scrollable document as-is (scroll + stitch → image-based PDF, PDF
+ * only). 'fullpage-html' captures the whole DOM as reflowable HTML with inlined
+ * images (no Readability stripping) and renders it through the reader pipeline to
+ * EPUB or PDF — hi-fi and selectable, unlike the 'fullpage' screenshot.
  */
-export type CaptureMode = 'reader' | 'fullpage';
+export type CaptureMode = 'reader' | 'fullpage' | 'fullpage-html';
 
 /** Raw result of running Readability on a document clone (F3-FR1). */
 export interface ReaderExtract {

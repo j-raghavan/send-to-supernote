@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isEmptyReaderExtract, type ReaderExtract } from '@domain/capture';
+import { isEmptyReaderExtract, type CapturedDocument, type ReaderExtract } from '@domain/capture';
 
 function extract(overrides: Partial<ReaderExtract>): ReaderExtract {
   return { title: 'T', content: '<p>body</p>', length: 500, ...overrides };
@@ -24,5 +24,18 @@ describe('isEmptyReaderExtract (F3-FR5)', () => {
 
   it('is false right at the length floor', () => {
     expect(isEmptyReaderExtract(extract({ content: '<p>x</p>', length: 50 }))).toBe(false);
+  });
+});
+
+describe('CapturedDocument shape (Phase 3)', () => {
+  it('accepts a fullpage-html captured document', () => {
+    const doc: CapturedDocument = {
+      mode: 'fullpage-html',
+      title: 'Page Title',
+      html: '<h1>Page Title</h1><p>body</p>',
+    };
+    expect(doc.mode).toBe('fullpage-html');
+    expect(doc.title).toBe('Page Title');
+    expect(doc.html).toContain('<p>body</p>');
   });
 });

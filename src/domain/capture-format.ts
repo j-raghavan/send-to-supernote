@@ -10,6 +10,7 @@ import type { OutputFormat } from '@domain/conversion';
 const FORMATS_BY_MODE: Record<CaptureMode, readonly OutputFormat[]> = {
   reader: ['pdf', 'epub'],
   fullpage: ['pdf'],
+  'fullpage-html': ['pdf', 'epub'],
 };
 
 export function allowedFormats(mode: CaptureMode): readonly OutputFormat[] {

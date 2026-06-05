@@ -83,4 +83,24 @@ describe('resolveSendRequest (F6-FR1)', () => {
       expect(resolveSendRequest(epubSettings, page, { format: 'pdf' }).format).toBe('pdf');
     });
   });
+
+  describe('Full Page (HTML) honors both formats (Phase 3)', () => {
+    it('honors a stored epub for fullpage-html (unlike the screenshot fullpage)', () => {
+      const fullpageHtmlSettings: Settings = {
+        ...settings,
+        defaultMode: 'fullpage-html',
+        defaultFormat: 'epub',
+      };
+      const req = resolveSendRequest(fullpageHtmlSettings, page);
+      expect(req.mode).toBe('fullpage-html');
+      expect(req.format).toBe('epub');
+    });
+
+    it('honors a pdf override for fullpage-html', () => {
+      const fullpageHtmlSettings: Settings = { ...settings, defaultMode: 'fullpage-html' };
+      const req = resolveSendRequest(fullpageHtmlSettings, page, { format: 'pdf' });
+      expect(req.mode).toBe('fullpage-html');
+      expect(req.format).toBe('pdf');
+    });
+  });
 });

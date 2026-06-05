@@ -8,12 +8,16 @@ import type { CaptureMode } from '@domain/capture';
 
 export const CAPTURE_MODE_LABELS: Record<CaptureMode, string> = {
   reader: 'Reader View',
-  fullpage: 'Full Page',
+  fullpage: 'Full Page (Image)',
+  'fullpage-html': 'Full Page (HTML)',
 };
 
 export const CAPTURE_MODE_DESCRIPTIONS: Record<CaptureMode, string> = {
   reader: 'A clean, reflow-friendly article — recommended for text.',
-  fullpage: 'Captures the page as-is (best-effort at fixed banners and very tall pages).',
+  fullpage:
+    'An exact image of the page as-is — PDF only (best for fixed layouts and very tall pages).',
+  'fullpage-html':
+    'The whole page as reflowable HTML with inlined images — selectable text, EPUB or PDF.',
 };
 
 /** The label for a capture mode (e.g. for a menu/toggle). */

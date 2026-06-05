@@ -11,7 +11,7 @@
  */
 /* c8 ignore start */
 import type { Extractor } from '@shared/ports';
-import type { ReaderExtract } from '@domain/capture';
+import type { CapturedDocument, ReaderExtract } from '@domain/capture';
 import type { ReaderParser } from './reader-parser';
 import { api } from '@shared/browser-api';
 import { applyInlinedImages } from '@conversion/apply-inline-images';
@@ -107,6 +107,13 @@ export class ScriptingExtractor implements Extractor {
     const html = applyInlinedImages(raw.html, raw.images);
     console.warn(`[send-to-supernote] captured html: ${html.length} chars from ${raw.url}`);
     return this.reader.extract(html, raw.url);
+  }
+
+  async extractFullPageHtml(): Promise<CapturedDocument> {
+    const raw = await this.run(capturePageWithImages);
+    const html = applyInlinedImages(raw.html, raw.images);
+    console.warn(`[send-to-supernote] captured full page: ${html.length} chars from ${raw.url}`);
+    return { mode: 'fullpage-html', title: raw.title, html };
   }
 
   private async run<T>(func: () => T): Promise<T> {
