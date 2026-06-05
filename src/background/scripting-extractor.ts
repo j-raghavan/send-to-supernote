@@ -81,14 +81,19 @@ async function capturePageWithImages(): Promise<{
 
   const overCap = (w: number, h: number): boolean => w * h > MAX_PIXELS;
 
-  // Only <img> elements are inlined. KNOWN LIMITATIONS (skipped): srcset-only /
-  // <picture><source> images that carry no `src` attribute (nothing for the
-  // off-page rewrite to match), and CSS background-images.
+  // Only <img> elements with a usable `src` are inlined. KNOWN LIMITATIONS
+  // (skipped): srcset-only / <picture><source> images and JS lazy-loaders that
+  // park the real URL in a data-* attribute (data-src/data-lazy-src/…) behind a
+  // SHARED placeholder `src` — the off-page rewrite keys on the `src` attribute,
+  // and a shared placeholder would collapse to one key and mis-inline every
+  // image, so these are intentionally not handled here. Native loading="lazy"
+  // (real URL in `src`) IS handled via the reload below. CSS background-images
+  // are also not captured.
   for (const img of Array.from(document.images)) {
     // Key on the RAW attribute value (matches apply-inline-images.ts).
     const raw = img.getAttribute('src');
     if (!raw || raw.startsWith('data:')) {
-      continue; // already inline, or srcset-only (no src)
+      continue; // already inline, or srcset-only / data-src-only (no usable src)
     }
     if (seen.has(raw)) {
       continue; // de-dupe identical raw srcs (don't re-encode)
@@ -109,10 +114,10 @@ async function capturePageWithImages(): Promise<{
       }
     }
     if (dataUri === undefined) {
-      // Either NOT yet decoded (lazy / below-the-fold) or tainted: reload the
-      // real URL fresh and anonymously. This decodes lazy images without
-      // scrolling, and for CORS hosts yields an un-tainted canvas. A non-CORS
-      // cross-origin image still taints and is skipped.
+      // Either NOT yet decoded (native loading="lazy" / below-the-fold) or
+      // tainted: reload the real URL fresh and anonymously. This decodes lazy
+      // images without scrolling, and for CORS hosts yields an un-tainted canvas.
+      // A non-CORS cross-origin image still taints and is skipped.
       const probe = await loadAnonymous(img.currentSrc || raw);
       if (
         probe &&
