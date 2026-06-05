@@ -125,6 +125,58 @@ describe('applyInlinedImages', () => {
     expect(out).toContain('<code>src="a"</code>');
   });
 
+  it('matches an entity-encoded src against the decoded captured key (& → &amp;)', () => {
+    // outerHTML serializes `&` as `&amp;`, but images are keyed on the DECODED
+    // getAttribute('src'). Without entity-decoding, any URL with `&` (most CDN /
+    // query-param images) would never match — the Issue-1 regression.
+    const html = '<img src="https://cdn.x/p.jpg?w=800&amp;h=600">';
+    const images: CapturedImage[] = [{ src: 'https://cdn.x/p.jpg?w=800&h=600', dataUri: PNG }];
+
+    const out = applyInlinedImages(html, images);
+
+    expect(out).toBe(`<img src="${PNG}">`);
+    expect(out).not.toContain('&amp;');
+  });
+
+  it('decodes a numeric entity in the src before matching (&#38; → &)', () => {
+    const html = '<img src="https://cdn.x/p.jpg?a=1&#38;b=2">';
+    const images: CapturedImage[] = [{ src: 'https://cdn.x/p.jpg?a=1&b=2', dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(`<img src="${PNG}">`);
+  });
+
+  it('decodes a hex entity in the src before matching (&#x26; → &)', () => {
+    const html = '<img src="https://cdn.x/p.jpg?a=1&#x26;b=2">';
+    const images: CapturedImage[] = [{ src: 'https://cdn.x/p.jpg?a=1&b=2', dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(`<img src="${PNG}">`);
+  });
+
+  it('decodes the named entities a serializer emits (&lt; &gt; &quot; &apos;)', () => {
+    const html = '<img src="x?a=&lt;&gt;&quot;&apos;">';
+    const images: CapturedImage[] = [{ src: `x?a=<>"'`, dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(`<img src="${PNG}">`);
+  });
+
+  it('matches an <img> even when an earlier attribute value contains a ">"', () => {
+    const html = '<img alt="a>b" src="https://x/a.png">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    const out = applyInlinedImages(html, images);
+
+    expect(out).toContain(PNG);
+    expect(out).not.toContain('https://x/a.png');
+  });
+
+  it('treats a "$" in the data URI literally (no $-substitution corruption)', () => {
+    const weird = 'data:image/png;base64,A$&B$1C';
+    const html = '<img src="https://x/a.png">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: weird }];
+
+    expect(applyInlinedImages(html, images)).toBe(`<img src="${weird}">`);
+  });
+
   it('rewrites multiple distinct images each to its own data URI', () => {
     const dataA = 'data:image/png;base64,AAA';
     const dataB = 'data:image/jpeg;base64,BBB';
