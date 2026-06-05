@@ -8,6 +8,7 @@
  */
 import type { Settings } from '@domain/settings';
 import type { CaptureMode, OutputFormat, Target } from '@domain/settings';
+import { coerceFormat } from '@domain/capture-format';
 import type { PageContext, SendRequest } from './send-document';
 
 export interface SendOverrides {
@@ -23,13 +24,16 @@ export function resolveSendRequest(
   overrides: SendOverrides = {},
 ): SendRequest {
   const target = overrides.target ?? settings.target;
-  // Full Page is a screenshot — no reflowable text — so it forces PDF here, not
-  // only in the UI: a stored defaultFormat='epub' must not leak into a fullpage
-  // send (FP1-FR3).
+  // Format routes through the capture-mode → allowed-format authority
+  // (capture-format), the single source of truth shared with the saga and the
+  // Options UI. The screenshot 'fullpage' mode is PDF-only, so a stored or
+  // overridden epub is coerced to pdf here, not only in the UI (FP1-FR3);
+  // 'reader' allows both, so its requested format is honored unchanged.
   const mode = overrides.mode ?? settings.defaultMode;
+  const requested = overrides.format ?? settings.defaultFormat;
   return {
     mode,
-    format: mode === 'fullpage' ? 'pdf' : (overrides.format ?? settings.defaultFormat),
+    format: coerceFormat(mode, requested),
     target,
     ...(target === 'cloud' && settings.cloudFolderId !== undefined
       ? { folderId: settings.cloudFolderId }

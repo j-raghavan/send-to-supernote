@@ -16,6 +16,7 @@ import {
   type Settings,
   type Target,
 } from '@domain/settings';
+import { allowedFormats, coerceFormat } from '@domain/capture-format';
 
 export interface OptionsView {
   /** Connection panel line (delegates to F2 state). */
@@ -29,6 +30,8 @@ export interface OptionsView {
   confirmFilename: boolean;
   /** Whether the public Cloud folder picker can be shown (connected to cloud). */
   canPickCloudFolder: boolean;
+  /** Which format <option>s are enabled for the current default mode. */
+  formatEnabled: Record<OutputFormat, boolean>;
 }
 
 /** Build the Options display model. */
@@ -45,15 +48,21 @@ export function buildOptionsView(
     : session === 'expired'
       ? 'Session expired — reconnect'
       : 'Not connected';
+  const allowed = allowedFormats(settings.defaultMode);
+  const formatEnabled: Record<OutputFormat, boolean> = {
+    pdf: allowed.includes('pdf'),
+    epub: allowed.includes('epub'),
+  };
   return {
     connectionStatus,
     connected,
     ...(account !== undefined ? { account } : {}),
     defaultMode: settings.defaultMode,
-    defaultFormat: settings.defaultFormat,
+    defaultFormat: coerceFormat(settings.defaultMode, settings.defaultFormat),
     target: settings.target,
     confirmFilename: settings.confirmFilename,
     canPickCloudFolder: connected && settings.target === 'cloud',
+    formatEnabled,
   };
 }
 
@@ -77,4 +86,20 @@ export function parseFormatChange(value: string): OutputFormat | undefined {
 
 export function parseTargetChange(value: string): Target | undefined {
   return isTarget(value) ? value : undefined;
+}
+
+/**
+ * Re-derive the format select state when the capture mode changes: coerce the
+ * current format to one the new mode allows and recompute which options enable.
+ * The options.ts shell calls this on mode-change and only renders the result.
+ */
+export function coerceFormatForMode(
+  mode: CaptureMode,
+  currentFormat: OutputFormat,
+): { value: OutputFormat; formatEnabled: Record<OutputFormat, boolean> } {
+  const allowed = allowedFormats(mode);
+  return {
+    value: coerceFormat(mode, currentFormat),
+    formatEnabled: { pdf: allowed.includes('pdf'), epub: allowed.includes('epub') },
+  };
 }
