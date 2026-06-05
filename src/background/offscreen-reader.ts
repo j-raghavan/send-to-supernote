@@ -34,7 +34,12 @@ export class OffscreenReaderExtractor implements ReaderParser {
       throw new Error('Reader extraction returned no result.');
     }
     const extract = reply as ReaderExtract;
-    console.warn(`[send-to-supernote] reader extract: ${extract.length} chars, "${extract.title}"`);
+    // Log the real HTML size (extract.content.length) — extract.length is only
+    // Readability's approximate TEXT-length estimate, which understates the
+    // captured content and previously read as a misleading "chars" count.
+    console.warn(
+      `[send-to-supernote] reader extract: ${extract.content.length} html chars, "${extract.title}"`,
+    );
     return extract;
   }
 }

@@ -41,10 +41,15 @@ async function capturePageWithImages(): Promise<{
   html: string;
   url: string;
   images: { src: string; srcset?: string; dataUri: string }[];
+  skipped: number;
 }> {
   const images: { src: string; srcset?: string; dataUri: string }[] = [];
   const seen = new Set<string>();
   let inlinedBytes = 0;
+  // Count remote images we WANTED to inline but couldn't (not-yet-decoded/lazy,
+  // over the pixel cap, cross-origin without CORS, or past the byte budget) —
+  // surfaced in the capture log so partial inlining isn't silent.
+  let skipped = 0;
   const MAX_PIXELS = 4_000_000; // >4 megapixels: skip
   const MAX_BYTES = 24_000_000; // ~24 MB total inlined budget
 
@@ -83,9 +88,11 @@ async function capturePageWithImages(): Promise<{
     }
     // Lazy/undecoded guard: only encode fully-loaded, non-zero bitmaps.
     if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) {
+      skipped += 1; // below-the-fold / lazy: present but not decoded
       continue;
     }
     if (img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+      skipped += 1;
       continue;
     }
 
@@ -105,9 +112,11 @@ async function capturePageWithImages(): Promise<{
       }
     }
     if (dataUri === undefined || !dataUri.startsWith('data:image/')) {
+      skipped += 1; // cross-origin without CORS, or unencodable
       continue;
     }
     if (inlinedBytes + dataUri.length > MAX_BYTES) {
+      skipped += 1;
       break; // 24 MB budget reached: stop inlining
     }
 
@@ -121,6 +130,7 @@ async function capturePageWithImages(): Promise<{
     html: document.documentElement.outerHTML,
     url: document.baseURI,
     images,
+    skipped,
   };
 }
 
@@ -135,7 +145,10 @@ export class ScriptingExtractor implements Extractor {
     // image bitmaps, then inline them into the HTML and parse off-page.
     const raw = await this.run(capturePageWithImages);
     const html = applyInlinedImages(raw.html, raw.images);
-    console.warn(`[send-to-supernote] captured html: ${html.length} chars from ${raw.url}`);
+    console.warn(
+      `[send-to-supernote] captured html: ${html.length} chars from ${raw.url} ` +
+        `(images inlined: ${raw.images.length}, skipped: ${raw.skipped})`,
+    );
     return this.reader.extract(html, raw.url);
   }
 
