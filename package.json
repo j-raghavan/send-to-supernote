@@ -1,6 +1,6 @@
 {
   "name": "send-to-supernote",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Manifest V3 Chrome extension that captures the current web page and delivers it to a Supernote (Ratta) tablet via Supernote Cloud or a self-hosted Supernote Private Cloud.",
   "private": true,
   "type": "module",
