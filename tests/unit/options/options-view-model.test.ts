@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildOptionsView,
   canPickPrivateFolder,
+  coerceFormatForMode,
   parseFormatChange,
   parseModeChange,
   parseTargetChange,
@@ -60,6 +61,63 @@ describe('buildOptionsView (F7-FR1)', () => {
 
   it('omits the account field when none is connected', () => {
     expect(buildOptionsView('disconnected', undefined, settings).account).toBeUndefined();
+  });
+
+  describe('format enable + coercion by mode (Issue 3)', () => {
+    it('enables both pdf and epub for reader settings', () => {
+      const view = buildOptionsView('connected', 'me@x.com', settings);
+      expect(view.formatEnabled).toEqual({ pdf: true, epub: true });
+    });
+
+    it('enables pdf only and disables epub for fullpage settings', () => {
+      const view = buildOptionsView('connected', 'me@x.com', {
+        ...settings,
+        defaultMode: 'fullpage',
+      });
+      expect(view.formatEnabled).toEqual({ pdf: true, epub: false });
+    });
+
+    it('coerces a stored fullpage+epub to pdf and disables epub (Issue-3 core)', () => {
+      const view = buildOptionsView('connected', 'me@x.com', {
+        ...settings,
+        defaultMode: 'fullpage',
+        defaultFormat: 'epub',
+      });
+      expect(view.defaultFormat).toBe('pdf');
+      expect(view.formatEnabled.epub).toBe(false);
+    });
+
+    it('leaves a reader+epub default unchanged', () => {
+      const view = buildOptionsView('connected', 'me@x.com', {
+        ...settings,
+        defaultMode: 'reader',
+        defaultFormat: 'epub',
+      });
+      expect(view.defaultFormat).toBe('epub');
+    });
+  });
+});
+
+describe('coerceFormatForMode (Issue 3)', () => {
+  it('coerces fullpage+epub to pdf and disables epub', () => {
+    expect(coerceFormatForMode('fullpage', 'epub')).toEqual({
+      value: 'pdf',
+      formatEnabled: { pdf: true, epub: false },
+    });
+  });
+
+  it('honors reader+epub and enables both', () => {
+    expect(coerceFormatForMode('reader', 'epub')).toEqual({
+      value: 'epub',
+      formatEnabled: { pdf: true, epub: true },
+    });
+  });
+
+  it('honors reader+pdf and enables both', () => {
+    expect(coerceFormatForMode('reader', 'pdf')).toEqual({
+      value: 'pdf',
+      formatEnabled: { pdf: true, epub: true },
+    });
   });
 });
 

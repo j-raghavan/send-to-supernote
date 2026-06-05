@@ -9,12 +9,8 @@ export class FakeExtractor implements Extractor {
   constructor(private readonly reader?: ReaderExtract | Error) {}
 
   extractReader(): Promise<ReaderExtract> {
-    if (this.reader instanceof Error) {
-      return Promise.reject(this.reader);
-    }
-    if (!this.reader) {
-      return Promise.reject(new Error('no reader extract configured'));
-    }
+    if (this.reader instanceof Error) return Promise.reject(this.reader);
+    if (!this.reader) return Promise.reject(new Error('no reader extract configured'));
     return Promise.resolve(this.reader);
   }
 }

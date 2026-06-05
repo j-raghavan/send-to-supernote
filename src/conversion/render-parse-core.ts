@@ -21,6 +21,7 @@ import { renderHtmlToPdf } from '../offscreen/pdf-renderer';
 import { renderEpub } from '../offscreen/epub-renderer';
 import { toXhtml } from './html-to-xhtml';
 import { stripRemoteImages } from './strip-remote-images';
+import { stripHeadElements } from './strip-head-elements';
 
 /**
  * Derive an EPUB title from the content's first <h1>, else the generic
@@ -49,11 +50,13 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
     return renderEpub({
       title: provided && provided.length > 0 ? provided : titleFromHtml(html),
       // EPUB chapters are parsed as strict XHTML and must be self-contained.
-      // First drop remote `<img>` references (undeclared remote resources that an
-      // offline reader halts on, truncating the chapter), THEN normalize to
+      // Drop remote `<img>` references (undeclared remote resources that an
+      // offline reader halts on, truncating the chapter) AND head-only elements
+      // left in the body (a stray `<meta>` halts MuPDF 1.17 — the Supernote's
+      // EPUB engine — dropping the rest of the article), THEN normalize to
       // well-formed XHTML (self-closed void elements) so a strict reader renders
-      // the whole document instead of stopping at the first image.
-      bodyHtml: toXhtml(stripRemoteImages(html)),
+      // the whole document instead of stopping at the first image or meta tag.
+      bodyHtml: toXhtml(stripHeadElements(stripRemoteImages(html))),
       identifier: `urn:uuid:${crypto.randomUUID()}`,
     });
   }

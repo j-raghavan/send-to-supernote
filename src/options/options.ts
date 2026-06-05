@@ -37,9 +37,11 @@ import { NO_THIRD_PARTY_SHARING, PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from
 import {
   buildOptionsView,
   canPickPrivateFolder,
+  coerceFormatForMode,
   parseFormatChange,
   parseModeChange,
 } from './options-view-model';
+import type { OutputFormat } from '@domain/settings';
 import { captureModeDescription } from '@capture/copy';
 import { type Diagnosis } from '@jobs/connection-doctor';
 import { formatDiagnostics } from '@jobs/diagnostics-report';
@@ -95,6 +97,15 @@ async function render(): Promise<void> {
 
   const mode = byId<HTMLSelectElement>('default-mode');
   const modeHint = byId('default-mode-hint');
+  const format = byId<HTMLSelectElement>('default-format');
+
+  const applyFormatEnabled = (enabled: { pdf: boolean; epub: boolean }): void => {
+    if (!format) return;
+    for (const opt of Array.from(format.options)) {
+      opt.disabled = enabled[opt.value as OutputFormat] === false;
+    }
+  };
+
   if (mode) {
     mode.value = view.defaultMode;
     if (modeHint) {
@@ -107,13 +118,24 @@ async function render(): Promise<void> {
         if (modeHint) {
           modeHint.textContent = captureModeDescription(parsed);
         }
+        if (format) {
+          const next = coerceFormatForMode(
+            parsed,
+            parseFormatChange(format.value) ?? view.defaultFormat,
+          );
+          if (format.value !== next.value) {
+            format.value = next.value;
+            void settings.setDefaultFormat(next.value); // never persist an illegal mode+format pair
+          }
+          applyFormatEnabled(next.formatEnabled);
+        }
       }
     });
   }
 
-  const format = byId<HTMLSelectElement>('default-format');
   if (format) {
     format.value = view.defaultFormat;
+    applyFormatEnabled(view.formatEnabled);
     format.addEventListener('change', () => {
       const parsed = parseFormatChange(format.value);
       if (parsed) {

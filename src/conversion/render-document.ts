@@ -29,9 +29,11 @@ export interface ConversionError {
 export interface RenderDeps {
   renderer: Renderer;
   /**
-   * Optional image fetcher. When provided, images are inlined as data URIs and
-   * un-fetchable images are skipped before rendering (F3-FR4); when absent, the
-   * HTML is rendered as-is.
+   * Optional network image fetcher (F3-FR4). NOTE: currently unwired in
+   * composition — image inlining is now done in-page via canvas at capture time
+   * (scripting-extractor + apply-inline-images), so captured HTML already carries
+   * `data:` images and this seam stays the `false` arm. Retained as an opt-in
+   * fallback for a render that receives HTML with un-inlined remote images.
    */
   fetchImage?: ImageFetcher;
 }

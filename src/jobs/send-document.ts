@@ -19,7 +19,7 @@ import { ok, type Result } from '@shared/result';
 import type { Badge, BlobTransfer, Clock, Notifier, Stitcher } from '@shared/ports';
 import type { PageSize } from '@domain/conversion';
 import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
-import { type CaptureMode } from '@domain/capture';
+import { type CaptureMode, type CapturedDocument } from '@domain/capture';
 import { contentTypeFor, DEFAULT_RENDER_OPTIONS, type OutputFormat } from '@domain/conversion';
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure } from '@domain/delivery';
@@ -261,29 +261,9 @@ export async function sendDocument(
       return fail('capture', captured.error.message, 'failed');
     }
 
-    // converting
-    await deps.notifier.notify(NOTE_CONVERTING);
-    const rendered = await renderDocument(deps.render, {
-      document: captured.value,
-      format: req.format,
-    });
-    if (!rendered.ok) {
-      await deps.notifier.notify(noteConversionFailed(rendered.error.message));
-      await deps.badge.set('error');
-      return fail('render', rendered.error.message, 'failed');
-    }
-
-    // hashing: read bytes back from the blob handle (F1-FR6)
-    const stored = await deps.blobs.get(rendered.value.handle);
-    if (stored === undefined) {
-      await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
-      await deps.badge.set('error');
-      return fail('render', 'Rendered blob missing', 'failed');
-    }
-    bytes = stored.bytes;
-    contentType = contentTypeFor(req.format);
-    title = captured.value.title;
-    blobHandle = rendered.value.handle;
+    const tail = await renderCaptured(deps, captured.value, req.format);
+    if (!tail.ok) return tail;
+    ({ bytes, contentType, title, blobHandle } = tail.value);
   }
 
   const port = deps.resolveDelivery(req.target);
@@ -321,6 +301,44 @@ export async function sendDocument(
   await deps.notifier.notify(noteSent(uploaded.value.fileName));
   await deps.badge.set('idle');
   return ok({ fileName: uploaded.value.fileName, state: finalState as 'done' });
+}
+
+interface RenderedTail {
+  bytes: Uint8Array;
+  contentType: string;
+  title: string;
+  blobHandle: string;
+}
+
+/**
+ * Render tail for the reader path: render the captured document to the requested
+ * format and read its bytes back, surfacing a render failure as a notified
+ * SendError. No capture step here (the caller captures first).
+ */
+async function renderCaptured(
+  deps: SendDocumentDeps,
+  captured: CapturedDocument,
+  format: OutputFormat,
+): Promise<Result<RenderedTail, SendError>> {
+  await deps.notifier.notify(NOTE_CONVERTING);
+  const rendered = await renderDocument(deps.render, { document: captured, format });
+  if (!rendered.ok) {
+    await deps.notifier.notify(noteConversionFailed(rendered.error.message));
+    await deps.badge.set('error');
+    return fail('render', rendered.error.message, 'failed');
+  }
+  const stored = await deps.blobs.get(rendered.value.handle);
+  if (stored === undefined) {
+    await deps.notifier.notify(noteConversionFailed('The rendered document was lost.'));
+    await deps.badge.set('error');
+    return fail('render', 'Rendered blob missing', 'failed');
+  }
+  return ok({
+    bytes: stored.bytes,
+    contentType: contentTypeFor(format),
+    title: captured.title,
+    blobHandle: rendered.value.handle,
+  });
 }
 
 /** Build the filename, de-duped against the destination's real listing (F6-FR3). */

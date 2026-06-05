@@ -7,6 +7,12 @@
  * that cannot be fetched are SKIPPED (the `<img>` removed) — never aborting the
  * whole render. Pure transform over HTML using an injected fetcher; fully
  * testable without a DOM or network.
+ *
+ * NOTE: this network-based path is currently UNWIRED (see RenderDeps.fetchImage);
+ * the active mechanism is capture-time in-page canvas inlining. The maintained
+ * `<img>`-rewrite variant (quote-aware tag matcher, entity decoding, $-safe
+ * replacement) lives in apply-inline-images.ts — port fixes from there if this
+ * path is ever reactivated.
  */
 
 /** Fetches an image URL, returning a data URI, or undefined if it can't be fetched. */
