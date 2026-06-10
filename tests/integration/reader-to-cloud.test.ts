@@ -35,20 +35,23 @@ describe('Reader View -> public Cloud (integration, D-3/I-2)', () => {
 
   it('captures, renders, uploads, and contacts only Supernote Cloud + Ratta S3', async () => {
     // 1. capture (Reader View on a clone — I-4 enforced in the adapter)
-    const captured = await captureReader({
-      extractor: new FakeExtractor({
-        title: 'A Web Article',
-        content: '<h1>A Web Article</h1><p>'.padEnd(80, 'x') + '</p>',
-        length: 900,
-      }),
-    });
+    const captured = await captureReader(
+      {
+        extractor: new FakeExtractor({
+          title: 'A Web Article',
+          content: '<h1>A Web Article</h1><p>'.padEnd(80, 'x') + '</p>',
+          length: 900,
+        }),
+      },
+      true,
+    );
     expect(captured.ok).toBe(true);
     if (!captured.ok) return;
 
     // 2. render to a PDF blob (offscreen renderer faked)
     const rendered = await renderDocument(
       { renderer: new FakeRenderer(2048) },
-      { document: captured.value, format: 'pdf' },
+      { document: captured.value, format: 'pdf', includeImages: true },
     );
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) return;

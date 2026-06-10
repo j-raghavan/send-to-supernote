@@ -20,7 +20,7 @@ import { StorageKeys } from '@shared/storage-keys';
 import { validateBaseUrl, httpWarningFor } from '@domain/private-cloud-url';
 import { DEFAULT_PUBLIC_PROFILE } from '@domain/delivery';
 import { api } from '@shared/browser-api';
-import type { Target } from '@domain/settings';
+import type { Settings, Target } from '@domain/settings';
 import { buildPopupView, connectFailureMessage } from './popup-view';
 import { PASSWORD_NEVER_STORED, PRIVACY_PAGE_PATH } from '../options/privacy-copy';
 
@@ -167,7 +167,7 @@ async function render(): Promise<void> {
   if (view.canSend) {
     show('view-signin', false);
     show('view-connected', true);
-    renderConnected(account, view.selectedTarget);
+    renderConnected(account, view.selectedTarget, current);
   } else {
     show('view-connected', false);
     show('view-signin', true);
@@ -175,10 +175,21 @@ async function render(): Promise<void> {
   }
 }
 
-function renderConnected(account: string | undefined, target: Target): void {
+function renderConnected(account: string | undefined, target: Target, current: Settings): void {
   const chip = byId('account-chip');
   if (chip) {
     chip.textContent = account ? `${account} · ${providerLabel(target)}` : providerLabel(target);
+  }
+
+  // "Include images" reflects the sticky preference and persists on change so the
+  // choice survives reopen; the click-time value is also sent (see runSendFromPopup)
+  // so a change made just before clicking Send is honored without a write race.
+  const includeImages = byId<HTMLInputElement>('include-images');
+  if (includeImages) {
+    includeImages.checked = current.includeImages;
+    includeImages.addEventListener('change', () => {
+      void settings.setIncludeImages(includeImages.checked);
+    });
   }
 
   const titleEl = byId('page-title');
@@ -215,9 +226,13 @@ async function runSendFromPopup(target: Target): Promise<void> {
     status.hidden = false;
   }
 
+  // Send the click-time checkbox value so there is no race with the persisted
+  // preference; default to true if the input is somehow absent.
+  const includeImages = byId<HTMLInputElement>('include-images')?.checked ?? true;
+
   let res: { ok?: boolean; error?: string } | undefined;
   try {
-    res = await sendMessageWithRetry<typeof res>({ type: 'send' });
+    res = await sendMessageWithRetry<typeof res>({ type: 'send', includeImages });
   } catch (thrown) {
     res = { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
   }

@@ -62,6 +62,8 @@ export interface SendRequest {
   folderId?: string;
   /** When true, the user may edit the filename before upload (F6-FR4). */
   confirmFilename: boolean;
+  /** Include images in the Reader send (per-page "Include images"; default on). */
+  includeImages: boolean;
   page: PageContext;
   /**
    * Pre-rendered bytes to upload as-is, bypassing capture + render. Used when the
@@ -254,14 +256,14 @@ export async function sendDocument(
   } else {
     // capturing
     await deps.notifier.notify(NOTE_CAPTURING);
-    const captured = await captureReader(deps.capture);
+    const captured = await captureReader(deps.capture, req.includeImages);
     if (!captured.ok) {
       await deps.notifier.notify(captureErrorNotification(captured.error));
       await deps.badge.set('error');
       return fail('capture', captured.error.message, 'failed');
     }
 
-    const tail = await renderCaptured(deps, captured.value, req.format);
+    const tail = await renderCaptured(deps, captured.value, req.format, req.includeImages);
     if (!tail.ok) return tail;
     ({ bytes, contentType, title, blobHandle } = tail.value);
   }
@@ -319,9 +321,10 @@ async function renderCaptured(
   deps: SendDocumentDeps,
   captured: CapturedDocument,
   format: OutputFormat,
+  includeImages: boolean,
 ): Promise<Result<RenderedTail, SendError>> {
   await deps.notifier.notify(NOTE_CONVERTING);
-  const rendered = await renderDocument(deps.render, { document: captured, format });
+  const rendered = await renderDocument(deps.render, { document: captured, format, includeImages });
   if (!rendered.ok) {
     await deps.notifier.notify(noteConversionFailed(rendered.error.message));
     await deps.badge.set('error');

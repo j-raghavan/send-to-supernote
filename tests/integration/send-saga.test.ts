@@ -55,6 +55,7 @@ const req = (overrides: Partial<SendRequest> = {}): SendRequest => ({
   target: 'cloud',
   folderId: 'doc-7', // skip Document resolution unless a test wants it
   confirmFilename: false,
+  includeImages: true,
   page: { hostname: 'example.com' },
   ...overrides,
 });
@@ -147,6 +148,7 @@ describe('send saga over the real PublicCloudAdapter (F6 integration)', () => {
         defaultFormat: 'pdf',
         target: 'cloud',
         confirmFilename: false,
+        includeImages: true,
         cloudFolderId: 'doc-7',
       };
       // The toolbar action sends using stored defaults (F6-FR1).

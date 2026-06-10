@@ -21,6 +21,7 @@ import { renderHtmlToPdf } from '../offscreen/pdf-renderer';
 import { renderEpub } from '../offscreen/epub-renderer';
 import { toXhtml } from './html-to-xhtml';
 import { stripRemoteImages } from './strip-remote-images';
+import { stripImages } from './strip-images';
 import { stripHeadElements } from './strip-head-elements';
 
 /**
@@ -45,10 +46,15 @@ export function titleFromHtml(html: string): string {
  * identifier; everything else lays the HTML out as a jsPDF PDF.
  */
 export async function renderToBytes(html: string, options: RenderOptions): Promise<Uint8Array> {
+  // Per-send "Include images" off: strip every image (data: AND remote) before
+  // rendering so the text-only choice is enforced authoritatively at render time,
+  // independent of whatever the in-page capture inlined. Strict `=== false` so an
+  // older caller that omits the field keeps the images-on behavior.
+  const source = options.includeImages === false ? stripImages(html) : html;
   if (renderRoute(options) === 'epub') {
     const provided = options.title?.trim();
     return renderEpub({
-      title: provided && provided.length > 0 ? provided : titleFromHtml(html),
+      title: provided && provided.length > 0 ? provided : titleFromHtml(source),
       // EPUB chapters are parsed as strict XHTML and must be self-contained.
       // Drop remote `<img>` references (undeclared remote resources that an
       // offline reader halts on, truncating the chapter) AND head-only elements
@@ -56,11 +62,11 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
       // EPUB engine — dropping the rest of the article), THEN normalize to
       // well-formed XHTML (self-closed void elements) so a strict reader renders
       // the whole document instead of stopping at the first image or meta tag.
-      bodyHtml: toXhtml(stripHeadElements(stripRemoteImages(html))),
+      bodyHtml: toXhtml(stripHeadElements(stripRemoteImages(source))),
       identifier: `urn:uuid:${crypto.randomUUID()}`,
     });
   }
-  return renderHtmlToPdf(html, options.pageSize);
+  return renderHtmlToPdf(source, options.pageSize);
 }
 
 /**

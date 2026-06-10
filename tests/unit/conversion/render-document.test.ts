@@ -13,7 +13,10 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
   });
 
   it('renders a PDF and returns the blob handle + size', async () => {
-    const result = await renderDocument({ renderer }, { document: doc, format: 'pdf' });
+    const result = await renderDocument(
+      { renderer },
+      { document: doc, format: 'pdf', includeImages: true },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.handle).toBe('handle-1');
@@ -24,26 +27,38 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
   });
 
   it('passes the chosen page size through to the renderer', async () => {
-    await renderDocument({ renderer }, { document: doc, format: 'pdf', pageSize: 'letter' });
+    await renderDocument(
+      { renderer },
+      { document: doc, format: 'pdf', pageSize: 'letter', includeImages: true },
+    );
     expect(renderer.calls[0]!.options.pageSize).toBe('letter');
   });
 
   it('renders EPUB with the epub content type and no pagination', async () => {
-    const result = await renderDocument({ renderer }, { document: doc, format: 'epub' });
+    const result = await renderDocument(
+      { renderer },
+      { document: doc, format: 'epub', includeImages: true },
+    );
     expect(result.ok && result.value.contentType).toBe('application/epub+zip');
     expect(renderer.calls[0]!.options.paginate).toBe(false);
   });
 
   it('retries once after a failed render and then succeeds', async () => {
     renderer.failNext = 1;
-    const result = await renderDocument({ renderer }, { document: doc, format: 'pdf' });
+    const result = await renderDocument(
+      { renderer },
+      { document: doc, format: 'pdf', includeImages: true },
+    );
     expect(result.ok).toBe(true);
     expect(renderer.calls).toHaveLength(1); // one failure (not recorded) + one success
   });
 
   it('fails with render-failed after two consecutive failures (no empty upload)', async () => {
     renderer.failNext = 2;
-    const result = await renderDocument({ renderer }, { document: doc, format: 'pdf' });
+    const result = await renderDocument(
+      { renderer },
+      { document: doc, format: 'pdf', includeImages: true },
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('render-failed');
@@ -61,7 +76,7 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
       Promise.resolve(`data:image/png;base64,${btoa(url)}`);
     const result = await renderDocument(
       { renderer, fetchImage },
-      { document: withImg, format: 'pdf' },
+      { document: withImg, format: 'pdf', includeImages: true },
     );
     expect(result.ok).toBe(true);
     expect(renderer.calls[0]!.html).toContain('data:image/png;base64,');
@@ -77,7 +92,7 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
     const fetchImage = (): Promise<undefined> => Promise.resolve(undefined);
     const result = await renderDocument(
       { renderer, fetchImage },
-      { document: withImg, format: 'pdf' },
+      { document: withImg, format: 'pdf', includeImages: true },
     );
     expect(result.ok).toBe(true);
     expect(renderer.calls[0]!.html).toBe('<p>keep</p>');

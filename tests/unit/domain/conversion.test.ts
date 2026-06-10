@@ -27,11 +27,22 @@ describe('resolveRenderOptions (F3-FR2)', () => {
     expect(resolveRenderOptions('pdf', 'letter').pageSize).toBe('letter');
   });
 
-  it('defaults to A4 PDF with pagination', () => {
+  it('defaults includeImages to true (per-send "Include images" on)', () => {
+    expect(resolveRenderOptions('pdf').includeImages).toBe(true);
+    expect(resolveRenderOptions('epub').includeImages).toBe(true);
+  });
+
+  it('respects an explicit includeImages flag', () => {
+    expect(resolveRenderOptions('pdf', 'a4', false).includeImages).toBe(false);
+    expect(resolveRenderOptions('epub', 'a4', true).includeImages).toBe(true);
+  });
+
+  it('defaults to A4 PDF with pagination and images on', () => {
     expect(DEFAULT_RENDER_OPTIONS).toEqual({
       format: 'pdf',
       pageSize: 'a4',
       paginate: true,
+      includeImages: true,
     });
   });
 });

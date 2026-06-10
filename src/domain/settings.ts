@@ -22,6 +22,11 @@ export interface Settings {
   cloudFolderId?: string;
   /** When true, prompt to edit the filename before each upload (F6-FR4). */
   confirmFilename: boolean;
+  /**
+   * Per-page "Include images" preference (sticky, default on). When false, the
+   * Reader send skips in-page image inlining and strips images at render time.
+   */
+  includeImages: boolean;
 }
 
 /**
@@ -35,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultFormat: 'epub',
   target: 'cloud',
   confirmFilename: false,
+  includeImages: true,
 };
 
 const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>(['reader', 'fullpage']);

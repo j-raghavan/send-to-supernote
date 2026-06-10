@@ -38,6 +38,7 @@ const req = (overrides: Partial<SendRequest> = {}): SendRequest => ({
   format: 'pdf',
   target: 'cloud',
   confirmFilename: false,
+  includeImages: true,
   page: { hostname: 'example.com' },
   ...overrides,
 });
@@ -395,6 +396,34 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     expect(offer).not.toHaveBeenCalled();
     expect(pcPort.uploadCalls).toHaveLength(0);
     expect(h.badge.current).toBe('expired');
+  });
+
+  it('threads includeImages:false to BOTH the extractor and the renderer options (reader path)', async () => {
+    const extractor = new FakeExtractor(ARTICLE);
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.capture = { extractor };
+    h.deps.render = { renderer };
+
+    const result = await sendDocument(h.deps, req({ includeImages: false }));
+
+    expect(result.ok).toBe(true);
+    expect(extractor.lastIncludeImages).toBe(false);
+    expect(renderer.calls).toHaveLength(1);
+    expect(renderer.calls[0]!.options.includeImages).toBe(false);
+  });
+
+  it('threads includeImages:true to BOTH the extractor and the renderer options (reader path)', async () => {
+    const extractor = new FakeExtractor(ARTICLE);
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.capture = { extractor };
+    h.deps.render = { renderer };
+
+    const result = await sendDocument(h.deps, req({ includeImages: true }));
+
+    expect(result.ok).toBe(true);
+    expect(extractor.lastIncludeImages).toBe(true);
+    expect(renderer.calls).toHaveLength(1);
+    expect(renderer.calls[0]!.options.includeImages).toBe(true);
   });
 
   it('deletes the rendered blob after a successful finish (cleanup)', async () => {

@@ -136,6 +136,65 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
   });
 });
 
+describe('renderToBytes — Include images off (per-send text-only)', () => {
+  beforeEach(() => {
+    renderEpub.mockClear();
+    renderHtmlToPdf.mockClear();
+    document.title = '';
+  });
+
+  it('strips a data: <img> BEFORE the PDF branch when includeImages:false', async () => {
+    // The image is stripped at render time, so the html handed to the PDF
+    // renderer contains no <img> (and no inline bytes) even though the capture
+    // inlined one.
+    const html = '<p>before</p><img src="data:image/png;base64,AAAA" alt="x" /><p>after</p>';
+    await renderToBytes(html, { ...resolveRenderOptions('pdf', 'a4'), includeImages: false });
+
+    expect(renderEpub).not.toHaveBeenCalled();
+    const handed = renderHtmlToPdf.mock.calls[0]![0];
+    expect(handed).not.toContain('<img');
+    expect(handed).not.toContain('data:image/png;base64,AAAA');
+    expect(handed).toContain('before');
+    expect(handed).toContain('after');
+  });
+
+  it('strips a data: <img> BEFORE the EPUB branch when includeImages:false', async () => {
+    const html =
+      '<h1>T</h1><p>before</p><img src="data:image/png;base64,AAAA" alt="x" /><p>after</p>';
+    await renderToBytes(html, { ...resolveRenderOptions('epub', 'a4'), includeImages: false });
+
+    expect(renderHtmlToPdf).not.toHaveBeenCalled();
+    const input = renderEpub.mock.calls[0]![0] as { bodyHtml: string };
+    expect(input.bodyHtml).not.toContain('<img');
+    expect(input.bodyHtml).not.toContain('data:image/png;base64,AAAA');
+    expect(input.bodyHtml).toContain('before');
+    expect(input.bodyHtml).toContain('after');
+  });
+
+  it('KEEPS the data: <img> for PDF when includeImages:true', async () => {
+    const html = '<p>before</p><img src="data:image/png;base64,AAAA" alt="x" /><p>after</p>';
+    await renderToBytes(html, { ...resolveRenderOptions('pdf', 'a4'), includeImages: true });
+
+    const handed = renderHtmlToPdf.mock.calls[0]![0];
+    expect(handed).toContain('data:image/png;base64,AAAA');
+  });
+
+  it('KEEPS the data: <img> for EPUB when includeImages is undefined (strict === false guard)', async () => {
+    // An older caller that omits includeImages must keep the images-on behavior:
+    // the data: image survives into the EPUB body (only remote images are dropped
+    // by the EPUB self-containment pass).
+    const html =
+      '<h1>T</h1><p>before</p><img src="data:image/png;base64,AAAA" alt="x" /><p>after</p>';
+    // Drop includeImages entirely to model an older caller; the strict `=== false`
+    // guard treats `undefined` as images-on.
+    const { includeImages: _omit, ...options } = resolveRenderOptions('epub', 'a4');
+    await renderToBytes(html, options as ReturnType<typeof resolveRenderOptions>);
+
+    const input = renderEpub.mock.calls[0]![0] as { bodyHtml: string };
+    expect(input.bodyHtml).toContain('data:image/png;base64,AAAA');
+  });
+});
+
 describe('parseReader (FF2-FR3/FR4)', () => {
   beforeEach(() => {
     extractReaderFromDocument.mockReset();

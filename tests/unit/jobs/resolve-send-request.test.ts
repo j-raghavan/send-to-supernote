@@ -8,6 +8,7 @@ const settings: Settings = {
   target: 'cloud',
   cloudFolderId: 'doc-7',
   confirmFilename: false,
+  includeImages: true,
 };
 
 const page = { hostname: 'example.com' };
@@ -81,6 +82,34 @@ describe('resolveSendRequest (F6-FR1)', () => {
       expect(resolveSendRequest(epubSettings, page).format).toBe('epub');
       // Override wins for reader.
       expect(resolveSendRequest(epubSettings, page, { format: 'pdf' }).format).toBe('pdf');
+    });
+  });
+
+  describe('includeImages (per-send "Include images")', () => {
+    it('carries the stored setting when there is no override (true)', () => {
+      expect(resolveSendRequest({ ...settings, includeImages: true }, page).includeImages).toBe(
+        true,
+      );
+    });
+
+    it('carries the stored setting when there is no override (false)', () => {
+      expect(resolveSendRequest({ ...settings, includeImages: false }, page).includeImages).toBe(
+        false,
+      );
+    });
+
+    it('lets a one-off override win over a true stored setting (pins ??, false override)', () => {
+      const req = resolveSendRequest({ ...settings, includeImages: true }, page, {
+        includeImages: false,
+      });
+      expect(req.includeImages).toBe(false);
+    });
+
+    it('lets a one-off override win over a false stored setting (pins ??, true override)', () => {
+      const req = resolveSendRequest({ ...settings, includeImages: false }, page, {
+        includeImages: true,
+      });
+      expect(req.includeImages).toBe(true);
     });
   });
 });

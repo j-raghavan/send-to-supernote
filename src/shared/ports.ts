@@ -166,8 +166,12 @@ export interface Clock {
  * inject canned extracts so the capture use cases are pure-testable.
  */
 export interface Extractor {
-  /** Extract the readable article from the active tab (F3-FR1). */
-  extractReader(): Promise<ReaderExtract>;
+  /**
+   * Extract the readable article from the active tab (F3-FR1). `includeImages`
+   * is the per-send "Include images" choice: when false, the adapter skips the
+   * in-page image inlining so no image bitmaps ride along in the captured HTML.
+   */
+  extractReader(includeImages: boolean): Promise<ReaderExtract>;
 }
 
 /** Result of a render: a handle to the stored blob plus its byte size. */

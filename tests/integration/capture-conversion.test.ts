@@ -33,14 +33,14 @@ describe('F3-AC1 — long-form article → multi-page PDF with the title', () =>
     });
     const renderer = new FakeRenderer();
 
-    const captured = await captureReader({ extractor });
+    const captured = await captureReader({ extractor }, true);
     expect(captured.ok).toBe(true);
     if (!captured.ok) return;
     expect(captured.value.title).toBe('The Long Read');
 
     const rendered = await renderDocument(
       { renderer },
-      { document: captured.value, format: 'pdf' },
+      { document: captured.value, format: 'pdf', includeImages: true },
     );
 
     expect(rendered.ok).toBe(true);
@@ -62,13 +62,13 @@ describe('F3-AC2 — defaultFormat=epub → a valid reflowable EPUB', () => {
     });
     const renderer = new FakeRenderer();
 
-    const captured = await captureReader({ extractor });
+    const captured = await captureReader({ extractor }, true);
     expect(captured.ok).toBe(true);
     if (!captured.ok) return;
 
     const rendered = await renderDocument(
       { renderer },
-      { document: captured.value, format: 'epub' },
+      { document: captured.value, format: 'epub', includeImages: true },
     );
 
     expect(rendered.ok && rendered.value.contentType).toBe('application/epub+zip');
@@ -127,7 +127,7 @@ describe('F3-AC4 — cross-origin images: rendered with taints omitted, never ab
 
     const rendered = await renderDocument(
       { renderer, fetchImage: denyFetch },
-      { document: captured, format: 'pdf' },
+      { document: captured, format: 'pdf', includeImages: true },
     );
 
     // The render still succeeds; the tainting image is gone, content stays.
@@ -149,7 +149,7 @@ describe('F3-AC4 — cross-origin images: rendered with taints omitted, never ab
 
     const rendered = await renderDocument(
       { renderer, fetchImage: grantFetch },
-      { document: captured, format: 'pdf' },
+      { document: captured, format: 'pdf', includeImages: true },
     );
 
     expect(rendered.ok).toBe(true);
