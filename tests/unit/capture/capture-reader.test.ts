@@ -11,7 +11,7 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
       length: 1200,
     });
 
-    const result = await captureReader({ extractor });
+    const result = await captureReader({ extractor }, true);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -28,13 +28,13 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
       content: '<p>'.padEnd(60, 'x') + '</p>',
       length: 200,
     });
-    const result = await captureReader({ extractor });
+    const result = await captureReader({ extractor }, true);
     expect(result.ok && result.value.byline).toBeUndefined();
   });
 
   it('returns empty-article when extraction yields no content (F3-AC4)', async () => {
     const extractor = new FakeExtractor({ title: 'T', content: '', length: 0 });
-    const result = await captureReader({ extractor });
+    const result = await captureReader({ extractor }, true);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('empty-article');
@@ -46,11 +46,31 @@ describe('captureReader (F3-FR1 / F3-FR5)', () => {
 
   it('returns extraction-failed when the extractor throws', async () => {
     const extractor = new FakeExtractor(new Error('Readability blew up'));
-    const result = await captureReader({ extractor });
+    const result = await captureReader({ extractor }, true);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('extraction-failed');
       expect(result.error.message).toContain("Couldn't read this page");
     }
+  });
+
+  it('forwards includeImages:true to extractReader (per-send "Include images")', async () => {
+    const extractor = new FakeExtractor({
+      title: 'T',
+      content: '<p>'.padEnd(60, 'x') + '</p>',
+      length: 200,
+    });
+    await captureReader({ extractor }, true);
+    expect(extractor.lastIncludeImages).toBe(true);
+  });
+
+  it('forwards includeImages:false to extractReader (per-send "Include images")', async () => {
+    const extractor = new FakeExtractor({
+      title: 'T',
+      content: '<p>'.padEnd(60, 'x') + '</p>',
+      length: 200,
+    });
+    await captureReader({ extractor }, false);
+    expect(extractor.lastIncludeImages).toBe(false);
   });
 });

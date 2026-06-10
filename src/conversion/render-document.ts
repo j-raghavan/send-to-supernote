@@ -42,6 +42,8 @@ export interface RenderParams {
   document: CapturedDocument;
   format: OutputFormat;
   pageSize?: PageSize;
+  /** Include images in the rendered output (per-send "Include images"). */
+  includeImages: boolean;
 }
 
 /** Render a captured document to a blob, retrying a failed render once. */
@@ -53,7 +55,7 @@ export async function renderDocument(
   // is the article/page title — never the render context's own document.title
   // (which would leak "Send to Supernote — Offscreen Renderer" into the output).
   const options: RenderOptions = {
-    ...resolveRenderOptions(params.format, params.pageSize),
+    ...resolveRenderOptions(params.format, params.pageSize, params.includeImages),
     title: params.document.title,
   };
 

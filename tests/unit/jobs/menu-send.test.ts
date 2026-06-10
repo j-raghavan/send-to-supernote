@@ -9,6 +9,7 @@ const settings: Settings = {
   target: 'cloud',
   cloudFolderId: 'doc-7',
   confirmFilename: false,
+  includeImages: true,
 };
 
 const page = { hostname: 'example.com' };

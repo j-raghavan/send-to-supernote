@@ -20,6 +20,7 @@ const req: SendRequest = {
   format: 'pdf',
   target: 'cloud',
   confirmFilename: false,
+  includeImages: true,
   page: { hostname: 'example.com' },
 };
 

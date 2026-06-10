@@ -50,4 +50,8 @@ describe('settings guards (FP1-FR1)', () => {
   it('keeps the default capture mode at reader (FP1-FR1)', () => {
     expect(DEFAULT_SETTINGS.defaultMode).toBe('reader');
   });
+
+  it('defaults includeImages to true (per-send "Include images" on by default)', () => {
+    expect(DEFAULT_SETTINGS.includeImages).toBe(true);
+  });
 });

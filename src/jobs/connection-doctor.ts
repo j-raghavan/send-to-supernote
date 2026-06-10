@@ -105,6 +105,7 @@ async function probeFormat(
   const rendered = await renderDocument(deps.render, {
     document: { mode: 'reader', title: DIAGNOSTIC_TITLE, html: DIAGNOSTIC_HTML },
     format,
+    includeImages: true,
   });
   if (!rendered.ok) {
     return { format, fileName, ok: false, stage: 'render', message: rendered.error.message };

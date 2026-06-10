@@ -15,6 +15,7 @@ export interface SendOverrides {
   mode?: CaptureMode;
   format?: OutputFormat;
   target?: Target;
+  includeImages?: boolean;
 }
 
 /** Build the default toolbar SendRequest from stored settings (F6-FR1). */
@@ -39,6 +40,7 @@ export function resolveSendRequest(
       ? { folderId: settings.cloudFolderId }
       : {}),
     confirmFilename: settings.confirmFilename,
+    includeImages: overrides.includeImages ?? settings.includeImages,
     page,
   };
 }

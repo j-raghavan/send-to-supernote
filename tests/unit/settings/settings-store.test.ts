@@ -23,12 +23,14 @@ describe('SettingsStore (F6/F7)', () => {
     await settings.setTarget('privatecloud');
     await settings.setCloudFolderId('folder-7');
     await settings.setConfirmFilename(true);
+    await settings.setIncludeImages(false);
     expect(await settings.get()).toEqual({
       defaultMode: 'reader',
       defaultFormat: 'epub',
       target: 'privatecloud',
       cloudFolderId: 'folder-7',
       confirmFilename: true,
+      includeImages: false,
     });
   });
 
@@ -47,5 +49,33 @@ describe('SettingsStore (F6/F7)', () => {
   it('omits cloudFolderId when not a string', async () => {
     await kv.set(StorageKeys.cloudFolderId, 123);
     expect((await settings.get()).cloudFolderId).toBeUndefined();
+  });
+
+  describe('includeImages (per-send "Include images")', () => {
+    it('returns the stored value when it is a boolean (true)', async () => {
+      await kv.set(StorageKeys.includeImages, true);
+      expect((await settings.get()).includeImages).toBe(true);
+    });
+
+    it('returns the stored value when it is a boolean (false)', async () => {
+      await settings.setIncludeImages(false);
+      expect((await settings.get()).includeImages).toBe(false);
+    });
+
+    it('falls back to the default (true) when nothing is stored', async () => {
+      expect((await settings.get()).includeImages).toBe(DEFAULT_SETTINGS.includeImages);
+      expect((await settings.get()).includeImages).toBe(true);
+    });
+
+    it('falls back to the default (true) when the stored value is not a boolean', async () => {
+      await kv.set(StorageKeys.includeImages, 'yes');
+      expect((await settings.get()).includeImages).toBe(true);
+    });
+
+    it('setIncludeImages writes the settings.includeImages key', async () => {
+      await settings.setIncludeImages(false);
+      expect(await kv.get(StorageKeys.includeImages)).toBe(false);
+      expect(StorageKeys.includeImages).toBe('settings.includeImages');
+    });
   });
 });

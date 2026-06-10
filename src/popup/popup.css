@@ -167,6 +167,29 @@ body {
   text-overflow: ellipsis;
 }
 
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex: none;
+  cursor: pointer;
+}
+
+.check--inline {
+  padding: 0 2px;
+  color: var(--ink);
+}
+
 .account {
   display: flex;
   align-items: center;

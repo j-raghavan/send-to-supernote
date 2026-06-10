@@ -26,10 +26,11 @@ export interface CaptureReaderDeps {
 /** Capture the active tab in Reader View. */
 export async function captureReader(
   deps: CaptureReaderDeps,
+  includeImages: boolean,
 ): Promise<Result<CapturedDocument, CaptureError>> {
   let extract;
   try {
-    extract = await deps.extractor.extractReader();
+    extract = await deps.extractor.extractReader(includeImages);
   } catch {
     return err({
       kind: 'extraction-failed',

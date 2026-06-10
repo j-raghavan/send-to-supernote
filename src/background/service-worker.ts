@@ -56,6 +56,7 @@ async function runSend(
   tabId: number,
   hostname: string,
   mode?: CaptureMode,
+  includeImages?: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const target = settings.target;
@@ -85,6 +86,7 @@ async function runSend(
       {
         ...(mode !== undefined ? { mode } : {}),
         ...(pdf ? { format: 'pdf' as const } : {}),
+        ...(includeImages !== undefined ? { includeImages } : {}),
       },
     );
     const finalRequest = {
@@ -427,7 +429,10 @@ onContextMenuClicked((mode) => {
   void sendActiveTab(mode);
 });
 
-async function sendActiveTab(mode?: CaptureMode): Promise<{ ok: boolean; error?: string }> {
+async function sendActiveTab(
+  mode?: CaptureMode,
+  includeImages?: boolean,
+): Promise<{ ok: boolean; error?: string }> {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     return { ok: false, error: 'No active tab to send.' };
@@ -440,7 +445,7 @@ async function sendActiveTab(mode?: CaptureMode): Promise<{ ok: boolean; error?:
       error: 'This page can’t be captured. Open a normal web page and try again.',
     };
   }
-  return runSend(tab.id, hostnameOf(tab.url), mode);
+  return runSend(tab.id, hostnameOf(tab.url), mode, includeImages);
 }
 
 // Startup marker — confirms in the SW console which build is live. Reopening the
@@ -474,9 +479,14 @@ api.runtime.onMessage.addListener(
       account?: string;
       password?: string;
       baseUrl?: string;
+      includeImages?: boolean;
     };
     if (msg.type === 'send') {
-      void sendActiveTab().then(sendResponse);
+      // The popup sends the click-time "Include images" value; an older popup
+      // that omits it leaves `includeImages` undefined, so resolveSendRequest
+      // falls back to the persisted settings.includeImages.
+      const includeImages = typeof msg.includeImages === 'boolean' ? msg.includeImages : undefined;
+      void sendActiveTab(undefined, includeImages).then(sendResponse);
       return true; // keep the channel open so the popup can show the outcome
     }
     if (msg.type === 'reconnected' && msg.target !== undefined) {

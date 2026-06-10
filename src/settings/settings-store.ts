@@ -24,12 +24,13 @@ export class SettingsStore {
 
   /** Read the full settings, validating each value against its domain type. */
   async get(): Promise<Settings> {
-    const [mode, format, target, cloudFolderId, confirm] = await Promise.all([
+    const [mode, format, target, cloudFolderId, confirm, includeImages] = await Promise.all([
       this.store.get<unknown>(StorageKeys.defaultMode),
       this.store.get<unknown>(StorageKeys.defaultFormat),
       this.store.get<unknown>(StorageKeys.target),
       this.store.get<unknown>(StorageKeys.cloudFolderId),
       this.store.get<unknown>(StorageKeys.confirmFilename),
+      this.store.get<unknown>(StorageKeys.includeImages),
     ]);
     return {
       defaultMode: isCaptureMode(mode) ? mode : DEFAULT_SETTINGS.defaultMode,
@@ -37,6 +38,8 @@ export class SettingsStore {
       target: isTarget(target) ? target : DEFAULT_SETTINGS.target,
       ...(typeof cloudFolderId === 'string' ? { cloudFolderId } : {}),
       confirmFilename: typeof confirm === 'boolean' ? confirm : DEFAULT_SETTINGS.confirmFilename,
+      includeImages:
+        typeof includeImages === 'boolean' ? includeImages : DEFAULT_SETTINGS.includeImages,
     };
   }
 
@@ -58,5 +61,9 @@ export class SettingsStore {
 
   setConfirmFilename(confirm: boolean): Promise<void> {
     return this.store.set(StorageKeys.confirmFilename, confirm);
+  }
+
+  setIncludeImages(value: boolean): Promise<void> {
+    return this.store.set(StorageKeys.includeImages, value);
   }
 }

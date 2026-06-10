@@ -39,13 +39,19 @@ import { applyInlinedImages } from '@conversion/apply-inline-images';
  * images that weren't ready at capture time (no scrolling required). The func is
  * async because the reload awaits an image load.
  */
-async function capturePageWithImages(): Promise<{
+async function capturePageWithImages(includeImages: boolean): Promise<{
   html: string;
   url: string;
   images: { src: string; srcset?: string; dataUri: string }[];
   skipped: number;
 }> {
   const images: { src: string; srcset?: string; dataUri: string }[] = [];
+  if (!includeImages) {
+    // Per-send "Include images" off: skip the in-page bitmap inlining entirely so
+    // no image data: URIs ride along. The render-time stripImages() is the
+    // authoritative enforcement; this just avoids the wasted capture work.
+    return { html: document.documentElement.outerHTML, url: document.baseURI, images, skipped: 0 };
+  }
   const seen = new Set<string>();
   let inlinedBytes = 0;
   // Count remote images we WANTED to inline but couldn't (not-yet-decoded/lazy,
@@ -161,10 +167,11 @@ export class ScriptingExtractor implements Extractor {
     private readonly reader: ReaderParser,
   ) {}
 
-  async extractReader(): Promise<ReaderExtract> {
+  async extractReader(includeImages: boolean): Promise<ReaderExtract> {
     // Self-contained page capture (no bundled imports) that also inlines loaded
-    // image bitmaps, then inline them into the HTML and parse off-page.
-    const raw = await this.run(capturePageWithImages);
+    // image bitmaps, then inline them into the HTML and parse off-page. When
+    // includeImages is false the capture func skips inlining and returns no images.
+    const raw = await this.run(capturePageWithImages, [includeImages]);
     const html = applyInlinedImages(raw.html, raw.images);
     console.warn(
       `[send-to-supernote] captured html: ${html.length} chars from ${raw.url} ` +
@@ -173,12 +180,17 @@ export class ScriptingExtractor implements Extractor {
     return this.reader.extract(html, raw.url);
   }
 
-  private async run<T>(func: () => T | Promise<T>): Promise<T> {
+  private async run<T, A extends unknown[]>(
+    func: (...args: A) => T | Promise<T>,
+    args: A = [] as unknown as A,
+  ): Promise<T> {
     // `func` may be async; executeScript awaits its promise and returns the
-    // resolved value as `injection.result` (typed as Awaited<...>).
+    // resolved value as `injection.result` (typed as Awaited<...>). `args` are
+    // structured-cloned into the page and passed positionally to `func`.
     const [injection] = await api.scripting.executeScript({
       target: { tabId: this.tabId },
       func,
+      args,
     });
     const result = injection?.result;
     if (result === null || result === undefined) {

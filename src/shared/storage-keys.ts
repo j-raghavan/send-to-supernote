@@ -24,6 +24,7 @@ export const StorageKeys = {
   target: 'settings.target',
   cloudFolderId: 'settings.cloudFolderId',
   confirmFilename: 'settings.confirmFilename',
+  includeImages: 'settings.includeImages',
 
   // Private Cloud (F8).
   privateBaseUrl: 'privatecloud.baseUrl',

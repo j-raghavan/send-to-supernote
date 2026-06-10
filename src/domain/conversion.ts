@@ -20,6 +20,12 @@ export interface RenderOptions {
   /** Paginate long content across multiple pages (F3-FR2). */
   paginate: boolean;
   /**
+   * Include images in the rendered output. When false, every image (data: and
+   * remote) is stripped at render time so the per-send text-only choice is
+   * enforced authoritatively, regardless of what the in-page capture inlined.
+   */
+  includeImages: boolean;
+  /**
    * The captured document's real title, used as the EPUB heading/metadata. When
    * absent, the renderer derives one from the content — it must NEVER fall back
    * to the render context's own `document.title` (that would leak the offscreen/
@@ -33,6 +39,7 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   format: 'pdf',
   pageSize: 'a4',
   paginate: true,
+  includeImages: true,
 };
 
 /** The MIME content type to associate with the rendered blob. */
@@ -48,10 +55,12 @@ export function contentTypeFor(format: OutputFormat): string {
 export function resolveRenderOptions(
   format: OutputFormat,
   pageSize: PageSize = DEFAULT_RENDER_OPTIONS.pageSize,
+  includeImages: boolean = DEFAULT_RENDER_OPTIONS.includeImages,
 ): RenderOptions {
   return {
     format,
     pageSize,
     paginate: format === 'pdf',
+    includeImages,
   };
 }
