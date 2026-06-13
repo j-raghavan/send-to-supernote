@@ -10,6 +10,7 @@ const settings: Settings = {
   cloudFolderId: 'doc-7',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
 };
 
 const page = { hostname: 'example.com' };

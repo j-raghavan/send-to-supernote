@@ -1,6 +1,6 @@
 # Privacy Policy — Send to Supernote
 
-- **Last updated:** 2026-05-28
+- **Last updated:** 2026-06-13
 - **Public policy URL:** https://github.com/j-raghavan/send-to-supernote/blob/master/docs/PRIVACY.md
   (this exact value is in `src/options/privacy-copy.ts` as `PRIVACY_POLICY_URL`).
 
@@ -24,9 +24,25 @@ Cloud server.
   compute the login hash during sign-in and is then discarded (D-2).
 - **No `chrome.storage.sync`.** Nothing sensitive is synced across machines.
 - **Local settings** (default capture mode/format, target, destination folder,
-  filename-confirm toggle) and a short local **send history** are stored locally
-  for your convenience. None of it leaves your device except as part of a send
-  you initiate.
+  filename-confirm toggle, and the **Add source & time** toggle) and a short
+  local **send history** are stored locally for your convenience. None of it
+  leaves your device except as part of a send you initiate.
+
+## Source URL & capture time (opt-in, off by default)
+
+The popup has an **Add source & time** toggle that is **off by default**. When you
+turn it on, each send stamps the page's **original URL** and the **capture time**
+into the file you upload — both as a small visible header and as file metadata
+(PDF document properties; EPUB `dc:source`/`dc:date`). This is convenient for
+tracking where a saved document came from, but it embeds your browsing source in
+the file, so it is **opt-in per send**. The preference is stored locally only; the
+URL is the page's own address and goes only to the Supernote destination you
+choose, never to any third party.
+
+> **Note on URLs with query strings.** The **full** page URL is embedded verbatim
+> when this is on — including any query parameters, which can sometimes carry
+> session tokens or one-time links. Leave the toggle off (the default) for such
+> pages, or remove sensitive query parameters before sending.
 
 ## Where your data goes
 

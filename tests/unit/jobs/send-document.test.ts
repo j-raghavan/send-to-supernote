@@ -39,6 +39,7 @@ const req = (overrides: Partial<SendRequest> = {}): SendRequest => ({
   target: 'cloud',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
   page: { hostname: 'example.com' },
   ...overrides,
 });
@@ -90,6 +91,49 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     }
     expect(h.port.uploadCalls).toHaveLength(1);
     expect(h.port.uploadCalls[0]!.contentType).toBe('application/pdf');
+  });
+
+  it('threads provenance into the reader render when includeProvenance is on (CP3/CP5)', async () => {
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.render = { renderer };
+    await sendDocument(
+      h.deps,
+      req({
+        includeProvenance: true,
+        page: { hostname: 'example.com', url: 'https://example.com/post' },
+      }),
+    );
+    // The render options carry provenance with the page URL + the clock's instant.
+    expect(renderer.calls[0]!.options.provenance).toMatchObject({
+      sourceUrl: 'https://example.com/post',
+      capturedAtMs: Date.UTC(2026, 4, 28),
+    });
+  });
+
+  it('threads NO provenance when the toggle is off (CP3 off-path)', async () => {
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.render = { renderer };
+    await sendDocument(h.deps, req());
+    expect(renderer.calls[0]!.options.provenance).toBeUndefined();
+  });
+
+  it('never stamps provenance on a pre-rendered source pass-through, even when on (CP3 Non-Goal)', async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.render = { renderer };
+    const result = await sendDocument(
+      h.deps,
+      req({
+        format: 'pdf',
+        includeProvenance: true,
+        page: { hostname: 'example.com', url: 'https://example.com/post' },
+        source: { bytes, contentType: 'application/pdf', title: 'paper' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    // No render happened at all — the raw source bytes were uploaded unchanged.
+    expect(renderer.calls).toHaveLength(0);
+    expect(h.port.uploadCalls[0]!.bytes).toBe(bytes);
   });
 
   it('uploads a pre-rendered source (PDF page) as-is, skipping capture + render', async () => {
@@ -533,6 +577,27 @@ describe('sendDocument Full Page branch (FP4-FR4, FP1-AC1/IP-3)', () => {
     expect(h.badge.current).toBe('idle');
     // The per-tile PNG handle was deleted after stitching.
     expect(await h.blobs.get(tileHandle)).toBeUndefined();
+  });
+
+  it('passes provenance to the stitcher when includeProvenance is on (CP6)', async () => {
+    await sendDocument(
+      h.deps,
+      req({
+        mode: 'fullpage',
+        includeProvenance: true,
+        page: { hostname: 'example.com', url: 'https://example.com/post' },
+      }),
+    );
+    // 3rd stitch arg is the provenance value (source URL + capture instant from the clock).
+    expect(stitchFn.mock.calls[0]![2]).toMatchObject({
+      sourceUrl: 'https://example.com/post',
+      capturedAtMs: Date.UTC(2026, 4, 28),
+    });
+  });
+
+  it('passes NO provenance to the stitcher when the toggle is off (CP6 off-path)', async () => {
+    await sendDocument(h.deps, req({ mode: 'fullpage' }));
+    expect(stitchFn.mock.calls[0]![2]).toBeUndefined();
   });
 
   it('truncated capture: warns the page was capped but still completes the send (FP6-FR1)', async () => {

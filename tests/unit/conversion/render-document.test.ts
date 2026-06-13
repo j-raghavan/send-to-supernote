@@ -97,4 +97,18 @@ describe('renderDocument (F3-FR2 / Edge Cases retry-once)', () => {
     expect(result.ok).toBe(true);
     expect(renderer.calls[0]!.html).toBe('<p>keep</p>');
   });
+
+  it('forwards provenance into the render options when present (CP5-FR1)', async () => {
+    const provenance = { sourceUrl: 'https://ex.com/a', capturedAtMs: 1234, timeZone: 'UTC' };
+    await renderDocument(
+      { renderer },
+      { document: doc, format: 'pdf', includeImages: true, provenance },
+    );
+    expect(renderer.calls[0]!.options.provenance).toEqual(provenance);
+  });
+
+  it('omits provenance from the options when absent (off-path)', async () => {
+    await renderDocument({ renderer }, { document: doc, format: 'pdf', includeImages: true });
+    expect(renderer.calls[0]!.options.provenance).toBeUndefined();
+  });
 });

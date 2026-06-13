@@ -18,3 +18,5 @@ coverage/
 .swarm/
 ruvector.db
 *.log
+# adb/device debug dumps (kept local)
+logcat.txt

@@ -20,7 +20,12 @@ import type { Badge, BlobTransfer, Clock, Notifier, Stitcher } from '@shared/por
 import type { PageSize } from '@domain/conversion';
 import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
 import { type CaptureMode, type CapturedDocument } from '@domain/capture';
-import { contentTypeFor, DEFAULT_RENDER_OPTIONS, type OutputFormat } from '@domain/conversion';
+import {
+  contentTypeFor,
+  DEFAULT_RENDER_OPTIONS,
+  type OutputFormat,
+  type Provenance,
+} from '@domain/conversion';
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
@@ -51,6 +56,12 @@ import {
 export interface PageContext {
   /** Page hostname for the filename fallback (F6-FR3). */
   hostname: string;
+  /**
+   * Full active-tab URL, used as the provenance source URL when the opt-in
+   * "Add source & time" toggle is on (CP3). Optional so an older caller that
+   * only supplies a hostname still type-checks; provenance is skipped if absent.
+   */
+  url?: string;
 }
 
 /** Inputs that pick how this particular send runs (toolbar default or one-off). */
@@ -64,6 +75,12 @@ export interface SendRequest {
   confirmFilename: boolean;
   /** Include images in the Reader send (per-page "Include images"; default on). */
   includeImages: boolean;
+  /**
+   * Stamp the source URL + capture time onto the output ("Add source & time";
+   * default off). Applies to Reader (PDF/EPUB) and Full Page; never to a
+   * pre-rendered `source` pass-through (CP3).
+   */
+  includeProvenance: boolean;
   page: PageContext;
   /**
    * Pre-rendered bytes to upload as-is, bypassing capture + render. Used when the
@@ -190,6 +207,19 @@ export async function sendDocument(
   let title: string;
   let blobHandle: string | undefined;
 
+  // Opt-in provenance (CP3): stamp the source URL + capture time onto a
+  // capture->render send. Built once here (the impure boundary) so the pure
+  // render cores receive deterministic data. Skipped for a `source` pass-through
+  // (there is no render seam to inject into — Non-Goal) and when the toggle is off.
+  const provenance: Provenance | undefined =
+    req.includeProvenance && !req.source
+      ? {
+          sourceUrl: req.page.url ?? '',
+          capturedAtMs: deps.clock.now(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }
+      : undefined;
+
   if (req.source) {
     bytes = req.source.bytes;
     contentType = req.source.contentType;
@@ -227,7 +257,11 @@ export async function sendDocument(
     await deps.notifier.notify(NOTE_CONVERTING);
     let stitched: Awaited<ReturnType<Stitcher['stitch']>>;
     try {
-      stitched = await deps.fullpage.stitcher.stitch(captured.value.tiles, captured.value.geometry);
+      stitched = await deps.fullpage.stitcher.stitch(
+        captured.value.tiles,
+        captured.value.geometry,
+        provenance,
+      );
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : 'Could not build the PDF.';
       await releaseTiles(deps, captured.value.tiles);
@@ -263,7 +297,13 @@ export async function sendDocument(
       return fail('capture', captured.error.message, 'failed');
     }
 
-    const tail = await renderCaptured(deps, captured.value, req.format, req.includeImages);
+    const tail = await renderCaptured(
+      deps,
+      captured.value,
+      req.format,
+      req.includeImages,
+      provenance,
+    );
     if (!tail.ok) return tail;
     ({ bytes, contentType, title, blobHandle } = tail.value);
   }
@@ -322,9 +362,15 @@ async function renderCaptured(
   captured: CapturedDocument,
   format: OutputFormat,
   includeImages: boolean,
+  provenance: Provenance | undefined,
 ): Promise<Result<RenderedTail, SendError>> {
   await deps.notifier.notify(NOTE_CONVERTING);
-  const rendered = await renderDocument(deps.render, { document: captured, format, includeImages });
+  const rendered = await renderDocument(deps.render, {
+    document: captured,
+    format,
+    includeImages,
+    ...(provenance ? { provenance } : {}),
+  });
   if (!rendered.ok) {
     await deps.notifier.notify(noteConversionFailed(rendered.error.message));
     await deps.badge.set('error');

@@ -8,11 +8,24 @@
  */
 /* c8 ignore start */
 import { jsPDF } from 'jspdf';
-import type { PageSize } from '@domain/conversion';
+import type { PageSize, Provenance } from '@domain/conversion';
+import { formatCapturedAt } from '@conversion/provenance';
 
 /** Render HTML to a paginated PDF and return the bytes. */
-export async function renderHtmlToPdf(html: string, pageSize: PageSize): Promise<Uint8Array> {
+export async function renderHtmlToPdf(
+  html: string,
+  pageSize: PageSize,
+  provenance?: Provenance,
+): Promise<Uint8Array> {
   const doc = new jsPDF({ unit: 'pt', format: pageSize });
+  // Provenance file metadata (CP5): jsPDF has no native "source URL" field, so
+  // the URL rides in `subject` and the capture time in `keywords`.
+  if (provenance) {
+    doc.setProperties({
+      subject: provenance.sourceUrl,
+      keywords: `Captured ${formatCapturedAt(provenance.capturedAtMs, provenance.timeZone)}`,
+    });
+  }
   const container = document.createElement('div');
   container.innerHTML = html;
   await doc.html(container, {

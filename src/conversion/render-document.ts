@@ -14,6 +14,7 @@ import type { CapturedDocument } from '@domain/capture';
 import {
   type OutputFormat,
   type PageSize,
+  type Provenance,
   type RenderOptions,
   resolveRenderOptions,
 } from '@domain/conversion';
@@ -44,6 +45,8 @@ export interface RenderParams {
   pageSize?: PageSize;
   /** Include images in the rendered output (per-send "Include images"). */
   includeImages: boolean;
+  /** Opt-in source URL + capture time to stamp onto the output (CP5). */
+  provenance?: Provenance;
 }
 
 /** Render a captured document to a blob, retrying a failed render once. */
@@ -57,6 +60,7 @@ export async function renderDocument(
   const options: RenderOptions = {
     ...resolveRenderOptions(params.format, params.pageSize, params.includeImages),
     title: params.document.title,
+    ...(params.provenance ? { provenance: params.provenance } : {}),
   };
 
   const html = deps.fetchImage

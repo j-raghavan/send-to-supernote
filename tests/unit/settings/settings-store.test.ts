@@ -24,6 +24,7 @@ describe('SettingsStore (F6/F7)', () => {
     await settings.setCloudFolderId('folder-7');
     await settings.setConfirmFilename(true);
     await settings.setIncludeImages(false);
+    await settings.setIncludeProvenance(true);
     expect(await settings.get()).toEqual({
       defaultMode: 'reader',
       defaultFormat: 'epub',
@@ -31,6 +32,7 @@ describe('SettingsStore (F6/F7)', () => {
       cloudFolderId: 'folder-7',
       confirmFilename: true,
       includeImages: false,
+      includeProvenance: true,
     });
   });
 
@@ -76,6 +78,29 @@ describe('SettingsStore (F6/F7)', () => {
       await settings.setIncludeImages(false);
       expect(await kv.get(StorageKeys.includeImages)).toBe(false);
       expect(StorageKeys.includeImages).toBe('settings.includeImages');
+    });
+  });
+
+  describe('includeProvenance ("Add source & time", default OFF)', () => {
+    it('falls back to the default (false) when nothing is stored', async () => {
+      expect((await settings.get()).includeProvenance).toBe(DEFAULT_SETTINGS.includeProvenance);
+      expect((await settings.get()).includeProvenance).toBe(false);
+    });
+
+    it('returns the stored value when it is a boolean (true)', async () => {
+      await settings.setIncludeProvenance(true);
+      expect((await settings.get()).includeProvenance).toBe(true);
+    });
+
+    it('falls back to the default (false) when the stored value is not a boolean', async () => {
+      await kv.set(StorageKeys.includeProvenance, 'yes');
+      expect((await settings.get()).includeProvenance).toBe(false);
+    });
+
+    it('setIncludeProvenance writes the settings.includeProvenance key', async () => {
+      await settings.setIncludeProvenance(true);
+      expect(await kv.get(StorageKeys.includeProvenance)).toBe(true);
+      expect(StorageKeys.includeProvenance).toBe('settings.includeProvenance');
     });
   });
 });

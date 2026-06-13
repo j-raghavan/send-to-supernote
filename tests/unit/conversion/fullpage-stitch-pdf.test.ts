@@ -18,6 +18,13 @@ import type { BlobHandle } from '@shared/ports';
 const addImage = vi.fn();
 const addPage = vi.fn();
 const jsPDFCtor = vi.fn();
+const setProperties = vi.fn();
+const setPage = vi.fn();
+const setFillColor = vi.fn();
+const rect = vi.fn();
+const setTextColor = vi.fn();
+const setFontSize = vi.fn();
+const text = vi.fn();
 vi.mock('jspdf', () => ({
   jsPDF: function (this: unknown, ...args: unknown[]) {
     jsPDFCtor(...args);
@@ -25,6 +32,13 @@ vi.mock('jspdf', () => ({
       internal: { pageSize: { getWidth: () => 595.28, getHeight: () => 841.89 } },
       addImage,
       addPage,
+      setProperties,
+      setPage,
+      setFillColor,
+      rect,
+      setTextColor,
+      setFontSize,
+      text,
       output: () => new ArrayBuffer(8),
     };
   },
@@ -314,5 +328,70 @@ describe('stitchFullPageToPdf — error branches', () => {
     await expect(
       stitchFullPageToPdf([{ handle: 'gone', offsetY: 0 }], geom({ totalHeight: 1000 }), resolve),
     ).rejects.toThrow('fullpage-stitch: missing tile bytes for handle gone');
+  });
+});
+
+describe('stitchFullPageToPdf — provenance banner + metadata (CP6)', () => {
+  const provenance = {
+    sourceUrl: 'https://example.com/post',
+    capturedAtMs: 1_750_000_000_000,
+    timeZone: 'America/Los_Angeles',
+  };
+
+  beforeEach(() => {
+    [
+      addImage,
+      addPage,
+      setProperties,
+      setPage,
+      setFillColor,
+      rect,
+      setTextColor,
+      setFontSize,
+      text,
+    ].forEach((s) => s.mockClear());
+  });
+
+  it('sets the source URL in subject and the capture time in keywords', async () => {
+    installCanvasStubs({});
+    await stitchFullPageToPdf(
+      [{ handle: 'h0', offsetY: 0 }],
+      geom({ totalHeight: 1000 }),
+      resolveBytes,
+      undefined,
+      provenance,
+    );
+    expect(setProperties).toHaveBeenCalledTimes(1);
+    const props = setProperties.mock.calls[0]![0] as { subject: string; keywords: string };
+    expect(props.subject).toBe('https://example.com/post');
+    expect(props.keywords).toContain('Captured');
+  });
+
+  it('draws the source/time banner on page 1', async () => {
+    installCanvasStubs({});
+    await stitchFullPageToPdf(
+      [{ handle: 'h0', offsetY: 0 }],
+      geom({ totalHeight: 1000 }),
+      resolveBytes,
+      undefined,
+      provenance,
+    );
+    expect(setPage).toHaveBeenCalledWith(1);
+    expect(rect).toHaveBeenCalledTimes(1); // the light background strip
+    const drawn = text.mock.calls.map((c) => c[0] as string);
+    expect(drawn.some((line) => line.startsWith('Source:'))).toBe(true);
+    expect(drawn.some((line) => line.startsWith('Captured:'))).toBe(true);
+  });
+
+  it('draws nothing and sets no properties when provenance is absent (off-path)', async () => {
+    installCanvasStubs({});
+    await stitchFullPageToPdf(
+      [{ handle: 'h0', offsetY: 0 }],
+      geom({ totalHeight: 1000 }),
+      resolveBytes,
+    );
+    expect(setProperties).not.toHaveBeenCalled();
+    expect(setPage).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
   });
 });

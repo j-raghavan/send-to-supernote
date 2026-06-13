@@ -192,6 +192,16 @@ function renderConnected(account: string | undefined, target: Target, current: S
     });
   }
 
+  // "Add source & time" mirrors the same sticky + click-time pattern (default
+  // OFF — privacy-first; only embeds the source URL/time on an explicit opt-in).
+  const includeProvenance = byId<HTMLInputElement>('include-provenance');
+  if (includeProvenance) {
+    includeProvenance.checked = current.includeProvenance;
+    includeProvenance.addEventListener('change', () => {
+      void settings.setIncludeProvenance(includeProvenance.checked);
+    });
+  }
+
   const titleEl = byId('page-title');
   void api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const title = tabs[0]?.title;
@@ -226,13 +236,18 @@ async function runSendFromPopup(target: Target): Promise<void> {
     status.hidden = false;
   }
 
-  // Send the click-time checkbox value so there is no race with the persisted
-  // preference; default to true if the input is somehow absent.
+  // Send the click-time checkbox values so there is no race with the persisted
+  // preferences; images default to true, provenance to false (its safe default).
   const includeImages = byId<HTMLInputElement>('include-images')?.checked ?? true;
+  const includeProvenance = byId<HTMLInputElement>('include-provenance')?.checked ?? false;
 
   let res: { ok?: boolean; error?: string } | undefined;
   try {
-    res = await sendMessageWithRetry<typeof res>({ type: 'send', includeImages });
+    res = await sendMessageWithRetry<typeof res>({
+      type: 'send',
+      includeImages,
+      includeProvenance,
+    });
   } catch (thrown) {
     res = { ok: false, error: thrown instanceof Error ? thrown.message : String(thrown) };
   }

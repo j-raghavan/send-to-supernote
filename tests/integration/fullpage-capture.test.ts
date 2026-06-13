@@ -51,6 +51,7 @@ const req = (overrides: Partial<SendRequest> = {}): SendRequest => ({
   target: 'cloud',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
   page: { hostname: 'example.com' },
   ...overrides,
 });

@@ -38,6 +38,7 @@ async function handleStitch(message: StitchMessage): Promise<RenderedBlob> {
     message.geometry,
     async (handle) => (await blobs.get(handle))?.bytes,
     DEFAULT_CAP,
+    message.provenance,
   );
   const handle = await blobs.put(bytes, 'application/pdf');
   return { handle, contentType: 'application/pdf', size: bytes.byteLength };

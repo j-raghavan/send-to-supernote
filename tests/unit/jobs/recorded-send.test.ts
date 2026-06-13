@@ -21,6 +21,7 @@ const req: SendRequest = {
   target: 'cloud',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
   page: { hostname: 'example.com' },
 };
 
