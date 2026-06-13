@@ -11,6 +11,7 @@
  * equivalent is `OffscreenStitcher`.
  */
 import type { BlobTransfer, RenderedBlob, Stitcher } from '@shared/ports';
+import type { Provenance } from '@domain/conversion';
 import {
   DEFAULT_CAP,
   type StitchGeometry,
@@ -21,12 +22,17 @@ import {
 export class DirectStitcher implements Stitcher {
   constructor(private readonly blobs: BlobTransfer) {}
 
-  async stitch(tiles: TileRef[], geometry: StitchGeometry): Promise<RenderedBlob> {
+  async stitch(
+    tiles: TileRef[],
+    geometry: StitchGeometry,
+    provenance?: Provenance,
+  ): Promise<RenderedBlob> {
     const bytes = await stitchFullPageToPdf(
       tiles,
       geometry,
       async (handle) => (await this.blobs.get(handle))?.bytes,
       DEFAULT_CAP,
+      provenance,
     );
     const handle = await this.blobs.put(bytes, 'application/pdf');
     return { handle, contentType: 'application/pdf', size: bytes.byteLength };

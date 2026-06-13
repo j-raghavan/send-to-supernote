@@ -24,14 +24,16 @@ export class SettingsStore {
 
   /** Read the full settings, validating each value against its domain type. */
   async get(): Promise<Settings> {
-    const [mode, format, target, cloudFolderId, confirm, includeImages] = await Promise.all([
-      this.store.get<unknown>(StorageKeys.defaultMode),
-      this.store.get<unknown>(StorageKeys.defaultFormat),
-      this.store.get<unknown>(StorageKeys.target),
-      this.store.get<unknown>(StorageKeys.cloudFolderId),
-      this.store.get<unknown>(StorageKeys.confirmFilename),
-      this.store.get<unknown>(StorageKeys.includeImages),
-    ]);
+    const [mode, format, target, cloudFolderId, confirm, includeImages, includeProvenance] =
+      await Promise.all([
+        this.store.get<unknown>(StorageKeys.defaultMode),
+        this.store.get<unknown>(StorageKeys.defaultFormat),
+        this.store.get<unknown>(StorageKeys.target),
+        this.store.get<unknown>(StorageKeys.cloudFolderId),
+        this.store.get<unknown>(StorageKeys.confirmFilename),
+        this.store.get<unknown>(StorageKeys.includeImages),
+        this.store.get<unknown>(StorageKeys.includeProvenance),
+      ]);
     return {
       defaultMode: isCaptureMode(mode) ? mode : DEFAULT_SETTINGS.defaultMode,
       defaultFormat: isOutputFormat(format) ? format : DEFAULT_SETTINGS.defaultFormat,
@@ -40,6 +42,10 @@ export class SettingsStore {
       confirmFilename: typeof confirm === 'boolean' ? confirm : DEFAULT_SETTINGS.confirmFilename,
       includeImages:
         typeof includeImages === 'boolean' ? includeImages : DEFAULT_SETTINGS.includeImages,
+      includeProvenance:
+        typeof includeProvenance === 'boolean'
+          ? includeProvenance
+          : DEFAULT_SETTINGS.includeProvenance,
     };
   }
 
@@ -65,5 +71,9 @@ export class SettingsStore {
 
   setIncludeImages(value: boolean): Promise<void> {
     return this.store.set(StorageKeys.includeImages, value);
+  }
+
+  setIncludeProvenance(value: boolean): Promise<void> {
+    return this.store.set(StorageKeys.includeProvenance, value);
   }
 }
