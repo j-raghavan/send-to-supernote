@@ -8,5 +8,9 @@ export class SystemClock implements Clock {
   now(): number {
     return Date.now();
   }
+
+  timeZone(): string | undefined {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
 }
 /* c8 ignore stop */

@@ -13,6 +13,7 @@ import {
   buildProvenanceHeaderHtml,
   formatCapturedAt,
   isoDate,
+  provenancePdfProperties,
   provenanceTextLines,
   type Provenance,
 } from '@conversion/provenance';
@@ -46,6 +47,33 @@ describe('formatCapturedAt (CP4-FR2) — deterministic local time + offset', () 
   it('still produces a string when no timeZone is given (host local zone)', () => {
     expect(typeof formatCapturedAt(EPOCH)).toBe('string');
     expect(formatCapturedAt(EPOCH).length).toBeGreaterThan(0);
+  });
+
+  it('shows the abbreviation plus the offset once for a zone that has an abbreviation', () => {
+    const out = formatCapturedAt(EPOCH, LA);
+    expect(out).toMatch(/PDT \(GMT-7\)$/);
+  });
+
+  it('does NOT double the offset for a zone whose short name is already an offset', () => {
+    // ICU has no en-CA abbreviation for Berlin/Tokyo, so the short name is
+    // already `GMT+2` / `GMT+9`; the suffix would repeat it.
+    expect(formatCapturedAt(EPOCH, 'Europe/Berlin')).toMatch(/GMT\+2$/);
+    expect(formatCapturedAt(EPOCH, TOKYO)).toMatch(/GMT\+9$/);
+    expect(formatCapturedAt(EPOCH, TOKYO)).not.toContain('(');
+  });
+
+  it('falls back to the host zone instead of throwing on an invalid IANA zone', () => {
+    expect(() => formatCapturedAt(EPOCH, 'Bogus/Zone')).not.toThrow();
+    expect(formatCapturedAt(EPOCH, 'Bogus/Zone')).toBe(formatCapturedAt(EPOCH));
+  });
+});
+
+describe('provenancePdfProperties (CP5/CP6) — one wording for both PDF paths', () => {
+  it('puts the URL in subject and the formatted capture time in keywords', () => {
+    expect(provenancePdfProperties(prov())).toEqual({
+      subject: 'https://example.com/article?id=7',
+      keywords: `Captured ${formatCapturedAt(EPOCH, LA)}`,
+    });
   });
 });
 

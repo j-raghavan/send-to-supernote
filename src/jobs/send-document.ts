@@ -29,6 +29,7 @@ import {
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
+import { resolveProvenance } from './resolve-provenance';
 import { buildUploadFilename } from '@shared/filename';
 import type { DeliveryPort, UploadInput } from '@delivery/delivery-port';
 import { resolveDestination } from '@delivery/resolve-destination';
@@ -199,26 +200,16 @@ export async function sendDocument(
     return fail('not-connected', 'Not connected', 'failed');
   }
 
-  // Resolve the bytes to upload: either a pre-rendered source (PDF page sent
-  // as-is) or capture -> render. `blobHandle` is set only for the render path so
-  // its IndexedDB blob is cleaned up; a source upload has no handle.
+  // Bytes to upload: a pre-rendered source (sent as-is) or capture -> render.
+  // `blobHandle` is set only for the render path (its IndexedDB blob is cleaned up).
   let bytes: Uint8Array;
   let contentType: string;
   let title: string;
   let blobHandle: string | undefined;
 
-  // Opt-in provenance (CP3): stamp the source URL + capture time onto a
-  // capture->render send. Built once here (the impure boundary) so the pure
-  // render cores receive deterministic data. Skipped for a `source` pass-through
-  // (there is no render seam to inject into — Non-Goal) and when the toggle is off.
-  const provenance: Provenance | undefined =
-    req.includeProvenance && !req.source
-      ? {
-          sourceUrl: req.page.url ?? '',
-          capturedAtMs: deps.clock.now(),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }
-      : undefined;
+  // ONE capture instant per send: the provenance stamp (CP3) and filename date agree.
+  const capturedAtMs = deps.clock.now();
+  const provenance = resolveProvenance(req, capturedAtMs, deps.clock.timeZone());
 
   if (req.source) {
     bytes = req.source.bytes;
@@ -227,8 +218,7 @@ export async function sendDocument(
   } else if (req.mode === 'fullpage') {
     // Full Page (FP4-FR4): scroll-capture the whole document, then stitch the
     // tiles into an image-based PDF — no Readability reflow, no renderDocument.
-    // The collaborators are wired by composition; without them this build cannot
-    // run Full Page, so fail with an actionable message rather than crash.
+    // The collaborators are wired by composition; without them fail actionably.
     if (deps.fullpage === undefined) {
       await deps.notifier.notify(noteCaptureFailed('Full Page capture is unavailable.'));
       await deps.badge.set('error');
@@ -324,7 +314,7 @@ export async function sendDocument(
     }
     return fail('delivery', NOTE_NO_DESTINATION_FOLDER.message, 'failed');
   }
-  const fileName = await resolveFileName(deps, req, port, destination, title);
+  const fileName = await resolveFileName(deps, req, port, destination, title, capturedAtMs);
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
   await deps.notifier.notify(noteUploading(fileName));
@@ -397,13 +387,14 @@ async function resolveFileName(
   port: DeliveryPort,
   directoryId: string,
   title: string,
+  epochMs: number,
 ): Promise<string> {
   const listed = await port.listFolders(directoryId);
   const existingNames = listed.ok ? listed.value.map((f) => f.name) : [];
   const suggested = buildUploadFilename({
     title,
     hostname: req.page.hostname,
-    epochMs: deps.clock.now(),
+    epochMs,
     format: req.format,
     existingNames,
   });

@@ -23,8 +23,7 @@ import { toXhtml } from './html-to-xhtml';
 import { stripRemoteImages } from './strip-remote-images';
 import { stripImages } from './strip-images';
 import { stripHeadElements } from './strip-head-elements';
-import { protectInlinedImages } from './protect-inlined-images';
-import { buildProvenanceHeaderHtml, isoDate } from './provenance';
+import { buildProvenanceHeaderHtml } from './provenance';
 
 /**
  * Derive an EPUB title from the content's first <h1>, else the generic
@@ -67,16 +66,9 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
       // the whole document instead of stopping at the first image or meta tag.
       bodyHtml: toXhtml(stripHeadElements(stripRemoteImages(source))),
       identifier: `urn:uuid:${crypto.randomUUID()}`,
-      // Provenance (CP5): dc:source/dc:date in content.opf + a visible header
-      // after the <h1>. NEVER an in-body <meta> (the MuPDF halt above). The
-      // header is pre-built XHTML-safe so the strict reader renders it as-is.
-      ...(provenance
-        ? {
-            sourceUrl: provenance.sourceUrl,
-            capturedAtIso: isoDate(provenance.capturedAtMs),
-            provenanceHtml: buildProvenanceHeaderHtml(provenance),
-          }
-        : {}),
+      // Provenance (CP5): the builder derives dc:source/dc:date + the visible
+      // header from the one value (NEVER an in-body <meta> — the MuPDF halt above).
+      ...(provenance ? { provenance } : {}),
     });
   }
   // PDF (Reader HTML layout): prepend the visible provenance header to the HTML
@@ -95,11 +87,6 @@ export function parseReader(html: string, url: string): ReaderExtract {
   const base = doc.createElement('base');
   base.href = url;
   doc.head?.prepend(base);
-
-  // Capture-inlined `data:` images must survive Readability: its lazy-image
-  // fixer would otherwise copy a `data-src`-style REMOTE URL back over the data
-  // URI of any "lazy"-classed <img>, and the EPUB step then has to drop it.
-  protectInlinedImages(doc);
 
   const article = extractReaderFromDocument(doc);
   if (!isEmptyReaderExtract(article)) {

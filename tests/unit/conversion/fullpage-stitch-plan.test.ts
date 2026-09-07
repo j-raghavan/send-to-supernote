@@ -210,6 +210,36 @@ describe('planFullPage — page slices (FP5)', () => {
     ]);
     slicesCover(plan.pageSlices, 5000);
   });
+
+  it('reserves firstPageInsetPx on page 1 only: a shorter first slice, full slices after (CP6)', () => {
+    // a4 width 800 dpr 1: band=1131; inset 100 → first slice 1031, then 1131s.
+    const plan = planFullPage(geom({ totalHeight: 3000, dpr: 1 }), undefined, 100);
+    expect(plan.pageSlices).toEqual([
+      { sourceY: 0, height: 1031 },
+      { sourceY: 1031, height: 1131 },
+      { sourceY: 2162, height: 838 },
+    ]);
+    slicesCover(plan.pageSlices, 3000);
+    // The bands (canvas chunks) and the height are untouched by the inset.
+    expect(plan.totalDeviceHeight).toBe(3000);
+    expect(plan.bands).toEqual([{ startY: 0, height: 3000 }]);
+  });
+
+  it('rounds a fractional inset and clamps it so the first slice keeps ≥ 1 px', () => {
+    expect(planFullPage(geom({ totalHeight: 1000, dpr: 1 }), undefined, 33.6).pageSlices).toEqual([
+      { sourceY: 0, height: 1000 }, // 1000 < 1131-34 → single slice, unchanged
+    ]);
+    const huge = planFullPage(geom({ totalHeight: 2000, dpr: 1 }), undefined, 5000);
+    expect(huge.pageSlices[0]).toEqual({ sourceY: 0, height: 1 });
+    expect(huge.pageSlices[1]).toEqual({ sourceY: 1, height: 1131 });
+    slicesCover(huge.pageSlices, 2000);
+  });
+
+  it('treats a negative inset as none', () => {
+    expect(planFullPage(geom({ totalHeight: 5000, dpr: 1 }), undefined, -50).pageSlices).toEqual(
+      planFullPage(geom({ totalHeight: 5000, dpr: 1 })).pageSlices,
+    );
+  });
 });
 
 describe('planFullPage — pageSize variants', () => {

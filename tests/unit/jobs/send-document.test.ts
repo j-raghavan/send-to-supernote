@@ -103,11 +103,30 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
         page: { hostname: 'example.com', url: 'https://example.com/post' },
       }),
     );
-    // The render options carry provenance with the page URL + the clock's instant.
-    expect(renderer.calls[0]!.options.provenance).toMatchObject({
+    // The render options carry provenance with the page URL + the clock's instant + zone.
+    expect(renderer.calls[0]!.options.provenance).toEqual({
       sourceUrl: 'https://example.com/post',
       capturedAtMs: Date.UTC(2026, 4, 28),
+      timeZone: 'UTC',
     });
+  });
+
+  it('stamps ONE instant per send: the provenance time and the filename date agree (CP3)', async () => {
+    // A clock that advances a day per read would otherwise let the header and
+    // the <hostname>-<date> filename fallback disagree across midnight.
+    let reads = 0;
+    h.deps.clock = {
+      now: () => Date.UTC(2026, 4, 28) + reads++ * 86_400_000,
+      timeZone: () => 'UTC',
+    };
+    h.deps.capture = { extractor: new FakeExtractor({ ...ARTICLE, title: '' }) };
+    const renderer = new FakeRenderer(2048, h.blobs);
+    h.deps.render = { renderer };
+
+    await sendDocument(h.deps, req({ includeProvenance: true, page: { hostname: 'example.com' } }));
+
+    expect(renderer.calls[0]!.options.provenance?.capturedAtMs).toBe(Date.UTC(2026, 4, 28));
+    expect(h.port.uploadCalls[0]!.fileName).toBe('example.com-2026-05-28.pdf');
   });
 
   it('threads NO provenance when the toggle is off (CP3 off-path)', async () => {
@@ -588,10 +607,11 @@ describe('sendDocument Full Page branch (FP4-FR4, FP1-AC1/IP-3)', () => {
         page: { hostname: 'example.com', url: 'https://example.com/post' },
       }),
     );
-    // 3rd stitch arg is the provenance value (source URL + capture instant from the clock).
-    expect(stitchFn.mock.calls[0]![2]).toMatchObject({
+    // 3rd stitch arg is the provenance value (source URL + capture instant/zone from the clock).
+    expect(stitchFn.mock.calls[0]![2]).toEqual({
       sourceUrl: 'https://example.com/post',
       capturedAtMs: Date.UTC(2026, 4, 28),
+      timeZone: 'UTC',
     });
   });
 

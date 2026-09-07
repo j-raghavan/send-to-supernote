@@ -65,9 +65,11 @@ describe('buildEpubFiles (F3-FR3 / R-6)', () => {
   describe('provenance (CP5-FR3)', () => {
     const withProvenance: EpubInput = {
       ...input,
-      sourceUrl: 'https://example.com/a?x=1&y=2',
-      capturedAtIso: '2025-06-15T15:06:40.000Z',
-      provenanceHtml: '<aside class="capture-provenance">Source: x</aside>',
+      provenance: {
+        sourceUrl: 'https://example.com/a?x=1&y=2',
+        capturedAtMs: 1_750_000_000_000, // 2025-06-15T15:06:40.000Z
+        timeZone: 'America/Los_Angeles',
+      },
     };
 
     it('writes escaped dc:source and dc:date into content.opf metadata', () => {
@@ -76,10 +78,14 @@ describe('buildEpubFiles (F3-FR3 / R-6)', () => {
       expect(opf?.content).toContain('<dc:date>2025-06-15T15:06:40.000Z</dc:date>');
     });
 
-    it('injects the visible header immediately after the <h1> in the chapter', () => {
+    it('injects the real visible header (URL + time) immediately after the <h1> in the chapter', () => {
       const chapter = buildEpubFiles(withProvenance).find((f) => f.path === 'OEBPS/chapter.xhtml');
-      expect(chapter?.content).toContain(
-        '<h1>My Article</h1><aside class="capture-provenance">Source: x</aside>',
+      expect(chapter?.content).toContain('<h1>My Article</h1><aside class="capture-provenance"');
+      expect(chapter?.content).toContain('href="https://example.com/a?x=1&amp;y=2"');
+      expect(chapter?.content).toContain('Captured: 2025-06-15');
+      // The header sits before the body content.
+      expect(chapter!.content.indexOf('capture-provenance')).toBeLessThan(
+        chapter!.content.indexOf('<p>Lorem ipsum.</p>'),
       );
     });
 
@@ -99,9 +105,10 @@ describe('buildEpubFiles (F3-FR3 / R-6)', () => {
     });
 
     it('writes only dc:date when the URL is blank (CP4-FR5 parity)', () => {
-      const opf = buildEpubFiles({ ...withProvenance, sourceUrl: '  ' }).find(
-        (f) => f.path === 'OEBPS/content.opf',
-      );
+      const opf = buildEpubFiles({
+        ...withProvenance,
+        provenance: { ...withProvenance.provenance!, sourceUrl: '  ' },
+      }).find((f) => f.path === 'OEBPS/content.opf');
       expect(opf?.content).not.toContain('<dc:source>');
       expect(opf?.content).toContain('<dc:date>');
     });

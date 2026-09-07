@@ -217,19 +217,13 @@ describe('renderToBytes — provenance injection (CP5)', () => {
     expect(renderHtmlToPdf.mock.calls[0]![2]).toEqual(provenance);
   });
 
-  it('feeds dc:source/dc:date + a visible header into the EPUB builder input', async () => {
+  it('forwards the provenance value to the EPUB builder (which derives dc:* + the header)', async () => {
     await renderToBytes('<h1>T</h1><p>body</p>', { ...resolveRenderOptions('epub'), provenance });
 
-    const input = renderEpub.mock.calls[0]![0] as {
-      sourceUrl?: string;
-      capturedAtIso?: string;
-      provenanceHtml?: string;
-    };
-    expect(input.sourceUrl).toBe('https://example.com/a?x=1&y=2');
-    expect(input.capturedAtIso).toBe('2025-06-15T15:06:40.000Z');
-    expect(input.provenanceHtml).toContain('capture-provenance');
-    // The injected header must be a body element, NEVER a <meta> (MuPDF guard).
-    expect(input.provenanceHtml).not.toContain('<meta');
+    const input = renderEpub.mock.calls[0]![0] as { provenance?: unknown; bodyHtml: string };
+    expect(input.provenance).toEqual(provenance);
+    // The header is the builder's job — never pre-injected into the body here.
+    expect(input.bodyHtml).not.toContain('capture-provenance');
   });
 
   it('leaves output unchanged when provenance is absent (off-path)', async () => {
@@ -272,22 +266,6 @@ describe('parseReader (FF2-FR3/FR4)', () => {
     expect(base?.getAttribute('href')).toBe('https://example.com/path/');
     // It is the FIRST child of <head> (prepended).
     expect(captured?.head?.firstElementChild?.tagName.toLowerCase()).toBe('base');
-  });
-
-  it('protects capture-inlined data: images from the lazy-image rewrite BEFORE Readability runs', () => {
-    let classAtExtract: string | null | undefined;
-    extractReaderFromDocument.mockImplementation((doc) => {
-      classAtExtract = doc.querySelector('img')?.getAttribute('class');
-      return { title: 'A', content: '<p>enough content for a non-empty extract.</p>', length: 200 };
-    });
-
-    parseReader(
-      '<img class="lazyloaded" src="data:image/png;base64,AAAA" data-src="https://cdn/x.jpg">',
-      'https://example.com/',
-    );
-
-    // Readability must see the <img> with its lazy class already gone.
-    expect(classAtExtract).toBeNull();
   });
 
   it('falls back to the page <body> (scripts/styles/embeds stripped) when Readability misses', () => {

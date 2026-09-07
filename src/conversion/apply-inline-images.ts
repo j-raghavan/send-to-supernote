@@ -13,6 +13,16 @@
  * test env, and scripting-extractor.ts is c8-ignored — so ALL the inlining
  * logic that CAN be tested lives here. Idempotent and never throws.
  *
+ * Lazy-loader note: a rewritten tag also loses its `srcset` AND every `data-*`
+ * attribute. The data URI is the single authoritative source, and the parked
+ * copies of the remote URL (`data-src`, `data-lazy-src`, `data-srcset`, …) are
+ * exactly what Readability's `_fixLazyImages` copies back over `src` for any
+ * "lazy"-classed <img> (and, for a tiny data URI, even without the class) —
+ * which un-inlined the image so the EPUB step then had to drop it. With nothing
+ * left to copy, Readability keeps the data URI; `class` is left alone so its
+ * unlikely-candidate filtering still applies. Images the capture did NOT inline
+ * (a page-authored LQIP placeholder, a remote src) are untouched.
+ *
  * Match-key note: the captured images are keyed on `img.getAttribute('src')`,
  * which is the DECODED attribute value, but the `src=` text in the captured
  * outerHTML is HTML-ENTITY-ENCODED (e.g. a URL `a.jpg?w=1&h=2` serializes as
@@ -41,6 +51,9 @@ export interface CapturedImage {
 const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
 const SRC_ATTR = /(?<![\w-])src\s*=\s*("([^"]*)"|'([^']*)')/i;
 const SRCSET_ATTR = /(?<![\w-])srcset\s*=\s*("[^"]*"|'[^']*')/i;
+// Every `data-*` attribute (a serializer always quotes values), incl. the
+// leading whitespace so removal leaves no gap. Global: a tag can carry many.
+const DATA_ATTRS = /\sdata-[^\s=>]+\s*=\s*("[^"]*"|'[^']*')/gi;
 
 // Decode the HTML entities a serializer emits in attribute values, in ONE pass
 // (so `&amp;lt;` decodes to `&lt;`, not `<`). Named set + numeric dec/hex.
@@ -71,7 +84,8 @@ function extractSrc(tag: string): string | undefined {
 /**
  * Inline page-captured images into the HTML. Each `<img>` whose raw `src`
  * matches a captured image has its `src` rewritten to the data URI and its
- * `srcset` stripped (the data URI is the single authoritative source). Tags
+ * `srcset` + `data-*` attributes stripped (the data URI is the single
+ * authoritative source — see the lazy-loader note above). Tags
  * without a `src`, or whose `src` was not captured (already `data:`,
  * cross-origin-tainted, over caps), are left untouched. Empty `images`
  * leaves the HTML unchanged. Idempotent and never throws.
@@ -100,8 +114,11 @@ export function applyInlinedImages(html: string, images: readonly CapturedImage[
     if (image === undefined) {
       return tag;
     }
-    // Tag-scoped: replace only this tag's src, strip its srcset. Use a replacer
-    // function so a `$` in the data URI is never treated as a $-substitution.
-    return tag.replace(SRC_ATTR, () => `src="${image.dataUri}"`).replace(SRCSET_ATTR, '');
+    // Tag-scoped: replace only this tag's src, strip its srcset and data-*.
+    // A replacer function keeps a `$` in the data URI from being a substitution.
+    return tag
+      .replace(SRC_ATTR, () => `src="${image.dataUri}"`)
+      .replace(SRCSET_ATTR, '')
+      .replace(DATA_ATTRS, '');
   });
 }

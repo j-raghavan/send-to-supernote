@@ -9,7 +9,9 @@
  * Gated by R-6: shipped behind `settings.defaultFormat === "epub"`; on-device
  * EPUB validation is deferred.
  */
+import type { Provenance } from '@domain/conversion';
 import { escapeXml } from './escape-xml';
+import { buildProvenanceHeaderHtml, isoDate } from './provenance';
 
 export interface EpubFile {
   path: string;
@@ -27,14 +29,11 @@ export interface EpubInput {
   /**
    * Capture provenance (CP5). When set, the source URL + capture instant are
    * written as Dublin Core `<dc:source>`/`<dc:date>` in content.opf (NEVER an
-   * in-body `<meta>` — MuPDF 1.17 halts on that), and `provenanceHtml` is the
-   * pre-built visible header injected after the chapter `<h1>`.
+   * in-body `<meta>` — MuPDF 1.17 halts on that) and the visible header is
+   * injected after the chapter `<h1>`. Derived here from the one value, so a
+   * caller cannot half-stamp a file.
    */
-  sourceUrl?: string;
-  /** Capture instant for `<dc:date>` (ISO-8601/UTC string). */
-  capturedAtIso?: string;
-  /** Pre-built, XHTML-safe visible provenance block (from `buildProvenanceHeaderHtml`). */
-  provenanceHtml?: string;
+  provenance?: Provenance;
 }
 
 const CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -50,7 +49,7 @@ function contentOpf(input: EpubInput, language: string): string {
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="pub-id">${escapeXml(input.identifier)}</dc:identifier>
     <dc:title>${escapeXml(input.title)}</dc:title>
-    <dc:language>${escapeXml(language)}</dc:language>${provenanceMetadata(input)}
+    <dc:language>${escapeXml(language)}</dc:language>${provenanceMetadata(input.provenance)}
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -77,7 +76,7 @@ function chapterXhtml(input: EpubInput, language: string): string {
   // title and is pre-built as strict XHTML-safe markup (NOT re-normalized here),
   // so a strict EPUB reader renders it without halting. It is a body element —
   // never an in-body <meta> (MuPDF 1.17 halt; the dc:* metadata is in content.opf).
-  const provenance = input.provenanceHtml ?? '';
+  const provenance = input.provenance ? buildProvenanceHeaderHtml(input.provenance) : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${escapeXml(language)}">
   <head><title>${escapeXml(input.title)}</title></head>
@@ -87,20 +86,17 @@ function chapterXhtml(input: EpubInput, language: string): string {
 
 /**
  * Dublin Core provenance lines for content.opf `<metadata>` (CP5-FR3). Emitted
- * only when provenance is present; the source URL is escaped and the date is the
- * caller's ISO-8601/UTC string. Returns '' (no-op) when absent — off-path EPUBs
- * are byte-identical to before.
+ * only when provenance is present: `<dc:source>` for a non-blank URL (the same
+ * blank rule as the visible header) and `<dc:date>` as ISO-8601/UTC. Returns ''
+ * (no-op) when absent — off-path EPUBs are byte-identical to before.
  */
-function provenanceMetadata(input: EpubInput): string {
-  const lines: string[] = [];
-  const url = input.sourceUrl?.trim();
-  if (url) {
-    lines.push(`\n    <dc:source>${escapeXml(url)}</dc:source>`);
+function provenanceMetadata(provenance: Provenance | undefined): string {
+  if (!provenance) {
+    return '';
   }
-  if (input.capturedAtIso) {
-    lines.push(`\n    <dc:date>${escapeXml(input.capturedAtIso)}</dc:date>`);
-  }
-  return lines.join('');
+  const url = provenance.sourceUrl.trim();
+  const source = url ? `\n    <dc:source>${escapeXml(url)}</dc:source>` : '';
+  return `${source}\n    <dc:date>${escapeXml(isoDate(provenance.capturedAtMs))}</dc:date>`;
 }
 
 /**

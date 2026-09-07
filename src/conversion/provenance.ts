@@ -24,14 +24,31 @@ const MAX_VISIBLE_URL = 100;
 
 /**
  * Format a capture time as local time with the zone abbreviation and UTC offset,
- * e.g. `2026-06-13 11:30 AM PST (GMT-8)`. Deterministic for a given
+ * e.g. `2026-06-13 11:30 a.m. PST (GMT-8)`. Deterministic for a given
  * `(epochMs, timeZone)`. Distinct from the EPUB `dc:date` (ISO-8601/UTC — see
  * `isoDate`).
  */
 export function formatCapturedAt(epochMs: number, timeZone?: string): string {
   const date = new Date(epochMs);
-  const base = new Intl.DateTimeFormat('en-CA', {
-    ...(timeZone ? { timeZone } : {}),
+  try {
+    return formatInZone(date, timeZone);
+  } catch {
+    // An IANA zone the runtime rejects must never fail the whole send: fall
+    // back to the host zone (which cannot throw) rather than dropping the time.
+    return formatInZone(date, undefined);
+  }
+}
+
+/**
+ * `YYYY-MM-DD hh:mm a.m./p.m. ZONE (GMT±h)` for one zone. The short zone name is
+ * an abbreviation where the locale has one (`PST`), and already an offset
+ * (`GMT+2`) elsewhere — in that case the offset suffix is redundant and skipped,
+ * so Berlin reads `GMT+2`, not `GMT+2 (GMT+2)`. Throws on an invalid zone.
+ */
+function formatInZone(date: Date, timeZone: string | undefined): string {
+  const zone = timeZone ? { timeZone } : {};
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    ...zone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -39,11 +56,19 @@ export function formatCapturedAt(epochMs: number, timeZone?: string): string {
     minute: '2-digit',
     hour12: true,
     timeZoneName: 'short',
-  }).format(date);
-  // en-CA renders `YYYY-MM-DD, hh:mm AM TZ`; normalize the comma to a space so
-  // the header reads `YYYY-MM-DD hh:mm AM TZ`.
-  const readable = base.replace(', ', ' ');
-  const offset = utcOffsetLabel(epochMs, timeZone);
+  }).formatToParts(date);
+  const shortName = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+  // en-CA renders `YYYY-MM-DD, hh:mm a.m. TZ`; normalize the comma to a space.
+  const readable = parts
+    .map((part) => part.value)
+    .join('')
+    .replace(', ', ' ');
+  if (/^(GMT|UTC)/i.test(shortName)) {
+    return readable;
+  }
+  const offset = new Intl.DateTimeFormat('en-US', { ...zone, timeZoneName: 'shortOffset' })
+    .formatToParts(date)
+    .find((part) => part.type === 'timeZoneName')?.value;
   return offset ? `${readable} (${offset})` : readable;
 }
 
@@ -85,24 +110,22 @@ export function provenanceTextLines(p: Provenance): string[] {
   return lines;
 }
 
+/**
+ * jsPDF document properties for a stamped PDF (CP5/CP6). jsPDF has no native
+ * "source URL" field, so the URL rides in `subject` and the capture time in
+ * `keywords`. One home for both PDF paths (Reader HTML + Full Page stitch).
+ */
+export function provenancePdfProperties(p: Provenance): { subject: string; keywords: string } {
+  return {
+    subject: p.sourceUrl,
+    keywords: `Captured ${formatCapturedAt(p.capturedAtMs, p.timeZone)}`,
+  };
+}
+
 function truncate(value: string, max: number): string {
   // Slice by CODE POINTS, not UTF-16 units, so an astral char (emoji / decoded
   // IDN) at the cut boundary is never split into a lone surrogate — a lone
   // surrogate is malformed XML and would halt a strict EPUB reader.
   const chars = Array.from(value);
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : value;
-}
-
-/** `GMT-8` / `GMT+5:30` style offset for the given instant + zone (empty if unresolvable). */
-function utcOffsetLabel(epochMs: number, timeZone?: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      ...(timeZone ? { timeZone } : {}),
-      timeZoneName: 'shortOffset',
-    }).formatToParts(new Date(epochMs));
-    return parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
-  } catch {
-    /* c8 ignore next 2 — defensive: an invalid IANA zone throws; header drops the offset. */
-    return '';
-  }
 }

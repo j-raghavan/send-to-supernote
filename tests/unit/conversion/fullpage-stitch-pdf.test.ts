@@ -377,10 +377,42 @@ describe('stitchFullPageToPdf — provenance banner + metadata (CP6)', () => {
       provenance,
     );
     expect(setPage).toHaveBeenCalledWith(1);
-    expect(rect).toHaveBeenCalledTimes(1); // the light background strip
+    expect(rect).toHaveBeenCalledTimes(1); // the white background strip
     const drawn = text.mock.calls.map((c) => c[0] as string);
     expect(drawn.some((line) => line.startsWith('Source:'))).toBe(true);
     expect(drawn.some((line) => line.startsWith('Captured:'))).toBe(true);
+  });
+
+  it('reserves the banner strip: page 1 image starts below it, later pages at the top', async () => {
+    installCanvasStubs({});
+    // a4 width 800 dpr 1: band=1131; totalHeight=1500 → two pages.
+    await stitchFullPageToPdf(
+      [{ handle: 'h0', offsetY: 0 }],
+      geom({ width: 800, totalHeight: 1500 }),
+      resolveBytes,
+      undefined,
+      provenance,
+    );
+    // Two lines (Source + Captured): 6·2 + 2·11 = 34 pt.
+    const bannerPt = 34;
+    expect(rect).toHaveBeenCalledWith(0, 0, 595.28, bannerPt, 'F');
+    // Page 1's image is placed at y = bannerPt (nothing under the strip)…
+    expect(addImage.mock.calls[0]![3]).toBe(bannerPt);
+    // …and its slice was shortened by the strip's device-px equivalent, so the
+    // image still ends at the page bottom (height ≈ pageHeight − banner).
+    expect(addImage.mock.calls[0]![5] as number).toBeCloseTo(841.58 - bannerPt, 0);
+    // Page 2 is a normal page: image at the top.
+    expect(addImage.mock.calls[1]![3]).toBe(0);
+  });
+
+  it('places every page image at the top when there is no banner (off-path)', async () => {
+    installCanvasStubs({});
+    await stitchFullPageToPdf(
+      [{ handle: 'h0', offsetY: 0 }],
+      geom({ width: 800, totalHeight: 1500 }),
+      resolveBytes,
+    );
+    expect(addImage.mock.calls.map((c) => c[3] as number)).toEqual([0, 0]);
   });
 
   it('draws nothing and sets no properties when provenance is absent (off-path)', async () => {

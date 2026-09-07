@@ -155,9 +155,14 @@ export interface Badge {
   set(state: BadgeState): Promise<void>;
 }
 
-/** Wall-clock source, injected so time-dependent logic (filename date, TTL) is deterministic. */
+/**
+ * Wall-clock source, injected so time-dependent logic (filename date, TTL,
+ * provenance stamp) is deterministic. `timeZone` is the host's IANA zone (or
+ * undefined when unknown) so the saga never reaches for an `Intl` global.
+ */
 export interface Clock {
   now(): number;
+  timeZone(): string | undefined;
 }
 
 /**

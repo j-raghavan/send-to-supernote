@@ -58,27 +58,37 @@ describe('applyInlinedImages', () => {
     expect(out).not.toContain('srcset');
   });
 
-  it('rewrites the REAL src when a lazy-loader data-src precedes it (lazysizes order)', () => {
+  it('rewrites the REAL src (not data-src) and strips the lazy-loader data-* attributes', () => {
+    // lazysizes authoring order: data-src BEFORE src. `\bsrc` would match the
+    // tail of `data-src` and put the data URI in the wrong attribute.
     const html =
       '<img class="lazyloaded" data-src="https://x/a.png" src="https://x/a.png" alt="p">';
     const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
 
     const out = applyInlinedImages(html, images);
 
-    expect(out).toBe(`<img class="lazyloaded" data-src="https://x/a.png" src="${PNG}" alt="p">`);
+    // class is kept (Readability's unlikely-candidate filter still sees it);
+    // the parked remote copy is gone so nothing can be copied back over src.
+    expect(out).toBe(`<img class="lazyloaded" src="${PNG}" alt="p">`);
   });
 
-  it('leaves data-srcset / data-lazy-srcset intact while stripping the real srcset', () => {
+  it('strips data-srcset / data-lazy-srcset along with the real srcset on a rewritten tag', () => {
     const html =
-      '<img data-lazy-srcset="https://x/a.png 300w" src="https://x/a.png" srcset="https://x/a.png 300w" data-srcset="https://x/a.png 2x">';
+      '<img data-lazy-srcset="https://x/a.png 300w" src="https://x/a.png" srcset="https://x/a.png 300w" data-srcset="https://x/a.png 2x" width="10">';
     const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
 
     const out = applyInlinedImages(html, images);
 
     // (The stripped srcset leaves a double space; the HTML parser ignores it.)
-    expect(out).toBe(
-      `<img data-lazy-srcset="https://x/a.png 300w" src="${PNG}"  data-srcset="https://x/a.png 2x">`,
-    );
+    expect(out).toBe(`<img src="${PNG}"  width="10">`);
+  });
+
+  it('leaves data-* attributes on an <img> it did NOT rewrite (e.g. an un-captured LQIP placeholder)', () => {
+    const html =
+      '<img class="lazyload" src="data:image/jpeg;base64,LQIP" data-src="https://x/b.jpg">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(html);
   });
 
   it('does not treat a data-src-only <img> (no real src) as having a src', () => {
