@@ -13,6 +13,7 @@ const settings: Settings = {
   cloudFolderId: 'doc-7',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
 };
 
 describe('buildPopupView (F6-FR6)', () => {

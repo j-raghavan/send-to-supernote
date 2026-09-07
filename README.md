@@ -31,6 +31,13 @@ service).
 The toolbar button sends with your default mode (Reader); the right-click menu
 lets you choose **Reader** or **Full Page** per send.
 
+- **Add source & time** (opt-in, off by default) — a popup toggle that stamps the
+  page's **original URL** and the **capture time** onto the file: a small visible
+  header plus file metadata (PDF document properties; EPUB `dc:source`/`dc:date`).
+  Handy for tracking where a saved document came from. It is off by default
+  because it embeds your browsing source in the file; the choice is sticky and
+  stored locally. See [`docs/PRIVACY.md`](./docs/PRIVACY.md).
+
 ## Delivery targets
 
 Both targets are inside the Supernote ecosystem; there is **no third-party

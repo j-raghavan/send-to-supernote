@@ -10,7 +10,7 @@
  * the single home for all of them.
  */
 import type { ReaderExtract } from '@domain/capture';
-import type { RenderOptions } from '@domain/conversion';
+import type { Provenance, RenderOptions } from '@domain/conversion';
 import type { StitchGeometry, TileRef } from '@conversion/fullpage-stitch-core';
 
 /** Reasons the offscreen document may be created (subset we use). */
@@ -214,7 +214,12 @@ export interface CapturePort {
  * inline bytes over `runtime.sendMessage`.
  */
 export interface Stitcher {
-  stitch(tiles: TileRef[], geometry: StitchGeometry): Promise<RenderedBlob>;
+  /** `provenance` (CP6): when set, draw a source/time banner on page 1 + set PDF metadata. */
+  stitch(
+    tiles: TileRef[],
+    geometry: StitchGeometry,
+    provenance?: Provenance,
+  ): Promise<RenderedBlob>;
 }
 
 /**

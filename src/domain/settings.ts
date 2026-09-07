@@ -27,13 +27,20 @@ export interface Settings {
    * Reader send skips in-page image inlining and strips images at render time.
    */
   includeImages: boolean;
+  /**
+   * "Add source & time" preference (sticky, default OFF — privacy-first). When
+   * true, the source URL + capture time are stamped onto the output (visible
+   * header + file metadata). Opt-in because it embeds the browsing source.
+   */
+  includeProvenance: boolean;
 }
 
 /**
  * Defaults applied when nothing is stored yet: Reader + EPUB + public Cloud.
  * EPUB is reflowable (ideal for e-ink) and renders by zipping the article HTML —
  * it skips html2canvas rasterization, which is unreliable in a non-visible
- * offscreen document and chokes on cross-origin images.
+ * offscreen document and chokes on cross-origin images. `includeProvenance` is
+ * OFF by default — provenance is embedded only on an explicit opt-in (privacy).
  */
 export const DEFAULT_SETTINGS: Settings = {
   defaultMode: 'reader',
@@ -41,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   target: 'cloud',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
 };
 
 const CAPTURE_MODES: ReadonlySet<string> = new Set<CaptureMode>(['reader', 'fullpage']);

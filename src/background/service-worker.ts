@@ -57,6 +57,8 @@ async function runSend(
   hostname: string,
   mode?: CaptureMode,
   includeImages?: boolean,
+  includeProvenance?: boolean,
+  url?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const target = settings.target;
@@ -82,11 +84,12 @@ async function runSend(
     const pdf = await probePdf(tabId);
     const request = resolveSendRequest(
       settings,
-      { hostname },
+      { hostname, ...(url !== undefined ? { url } : {}) },
       {
         ...(mode !== undefined ? { mode } : {}),
         ...(pdf ? { format: 'pdf' as const } : {}),
         ...(includeImages !== undefined ? { includeImages } : {}),
+        ...(includeProvenance !== undefined ? { includeProvenance } : {}),
       },
     );
     const finalRequest = {
@@ -432,6 +435,7 @@ onContextMenuClicked((mode) => {
 async function sendActiveTab(
   mode?: CaptureMode,
   includeImages?: boolean,
+  includeProvenance?: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
@@ -445,7 +449,7 @@ async function sendActiveTab(
       error: 'This page can’t be captured. Open a normal web page and try again.',
     };
   }
-  return runSend(tab.id, hostnameOf(tab.url), mode, includeImages);
+  return runSend(tab.id, hostnameOf(tab.url), mode, includeImages, includeProvenance, tab.url);
 }
 
 // Startup marker — confirms in the SW console which build is live. Reopening the
@@ -480,13 +484,16 @@ api.runtime.onMessage.addListener(
       password?: string;
       baseUrl?: string;
       includeImages?: boolean;
+      includeProvenance?: boolean;
     };
     if (msg.type === 'send') {
-      // The popup sends the click-time "Include images" value; an older popup
-      // that omits it leaves `includeImages` undefined, so resolveSendRequest
-      // falls back to the persisted settings.includeImages.
+      // The popup sends the click-time "Include images" / "Add source & time"
+      // values; an older popup that omits either leaves it undefined, so
+      // resolveSendRequest falls back to the persisted settings.
       const includeImages = typeof msg.includeImages === 'boolean' ? msg.includeImages : undefined;
-      void sendActiveTab(undefined, includeImages).then(sendResponse);
+      const includeProvenance =
+        typeof msg.includeProvenance === 'boolean' ? msg.includeProvenance : undefined;
+      void sendActiveTab(undefined, includeImages, includeProvenance).then(sendResponse);
       return true; // keep the channel open so the popup can show the outcome
     }
     if (msg.type === 'reconnected' && msg.target !== undefined) {

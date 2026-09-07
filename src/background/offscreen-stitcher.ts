@@ -9,6 +9,7 @@
  */
 /* c8 ignore start */
 import type { RenderedBlob, Stitcher } from '@shared/ports';
+import type { Provenance } from '@domain/conversion';
 import type { StitchGeometry, TileRef } from '@conversion/fullpage-stitch-core';
 import type { OffscreenManager } from './offscreen-manager';
 
@@ -16,17 +17,28 @@ export interface StitchMessage {
   type: 'stitch';
   tiles: TileRef[];
   geometry: StitchGeometry;
+  /** Opt-in provenance to stamp on the stitched PDF (CP6); absent → unchanged. */
+  provenance?: Provenance;
 }
 
 export class OffscreenStitcher implements Stitcher {
   constructor(private readonly manager: OffscreenManager) {}
 
-  async stitch(tiles: TileRef[], geometry: StitchGeometry): Promise<RenderedBlob> {
+  async stitch(
+    tiles: TileRef[],
+    geometry: StitchGeometry,
+    provenance?: Provenance,
+  ): Promise<RenderedBlob> {
     const ensured = await this.manager.ensure();
     if (!ensured.ok) {
       throw new Error('Could not create the offscreen stitcher.');
     }
-    const message: StitchMessage = { type: 'stitch', tiles, geometry };
+    const message: StitchMessage = {
+      type: 'stitch',
+      tiles,
+      geometry,
+      ...(provenance ? { provenance } : {}),
+    };
     const reply: unknown = await chrome.runtime.sendMessage(message);
     await this.manager.release();
     if (reply !== null && typeof reply === 'object' && 'error' in reply) {

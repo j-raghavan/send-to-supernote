@@ -16,6 +16,7 @@ export interface SendOverrides {
   format?: OutputFormat;
   target?: Target;
   includeImages?: boolean;
+  includeProvenance?: boolean;
 }
 
 /** Build the default toolbar SendRequest from stored settings (F6-FR1). */
@@ -41,6 +42,7 @@ export function resolveSendRequest(
       : {}),
     confirmFilename: settings.confirmFilename,
     includeImages: overrides.includeImages ?? settings.includeImages,
+    includeProvenance: overrides.includeProvenance ?? settings.includeProvenance,
     page,
   };
 }

@@ -22,9 +22,10 @@
  * namespace) and NO IndexedDB (handle resolution is injected via `resolve`).
  */
 import type { PageGeometry } from '@capture/fullpage-plan';
-import type { PageSize } from '@domain/conversion';
+import type { PageSize, Provenance } from '@domain/conversion';
 import type { BlobHandle } from '@shared/ports';
 import { jsPDF } from 'jspdf';
+import { formatCapturedAt, provenanceTextLines } from './provenance';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Part 1 — pure planner (no DOM)
@@ -200,6 +201,7 @@ export async function stitchFullPageToPdf(
   geometry: StitchGeometry,
   resolve: (h: BlobHandle) => Promise<Uint8Array | undefined>,
   cap: FullPageCap = DEFAULT_CAP,
+  provenance?: Provenance,
 ): Promise<Uint8Array> {
   const plan = planFullPage(geometry, cap);
   const dpr = geometry.dpr > 0 ? geometry.dpr : 1;
@@ -239,6 +241,15 @@ export async function stitchFullPageToPdf(
   const pageWidthPt = pdf.internal.pageSize.getWidth();
   const pageHeightPt = pdf.internal.pageSize.getHeight();
 
+  // Provenance file metadata (CP6): the source URL rides in `subject`, the
+  // capture time in `keywords` (jsPDF has no native source-URL property).
+  if (provenance) {
+    pdf.setProperties({
+      subject: provenance.sourceUrl,
+      keywords: `Captured ${formatCapturedAt(provenance.capturedAtMs, provenance.timeZone)}`,
+    });
+  }
+
   for (let i = 0; i < plan.pageSlices.length; i += 1) {
     const slice = plan.pageSlices[i]!;
     const sliceCanvas = new OffscreenCanvas(widthPx, slice.height);
@@ -273,7 +284,35 @@ export async function stitchFullPageToPdf(
     pdf.addImage(dataUrl, 'JPEG', 0, 0, pageWidthPt, Math.min(renderHeightPt, pageHeightPt));
   }
 
+  // Visible provenance banner (CP6): the Full Page PDF is an image, so the
+  // header is DRAWN (not HTML) — a light strip + small grey text overlaid on the
+  // top of page 1, where the screenshot starts.
+  if (provenance) {
+    drawProvenanceBanner(pdf, provenance, pageWidthPt);
+  }
+
   return new Uint8Array(pdf.output('arraybuffer'));
+}
+
+/**
+ * Draw the source/time banner on page 1 (CP6): a translucent-white strip at the
+ * top with small grey text lines, sized so the header is legible over whatever
+ * the screenshot's top edge happens to be.
+ */
+function drawProvenanceBanner(pdf: jsPDF, provenance: Provenance, pageWidthPt: number): void {
+  const lines = provenanceTextLines(provenance);
+  const fontPt = 8;
+  const lineHeight = fontPt + 3;
+  const padding = 6;
+  const bannerHeight = padding * 2 + lines.length * lineHeight;
+  pdf.setPage(1);
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, pageWidthPt, bannerHeight, 'F');
+  pdf.setTextColor(90, 90, 90);
+  pdf.setFontSize(fontPt);
+  lines.forEach((line, i) => {
+    pdf.text(line, padding, padding + (i + 1) * lineHeight - 3);
+  });
 }
 
 /** Read a JPEG Blob's bytes as a base64 data URL for `jsPDF.addImage`. */
