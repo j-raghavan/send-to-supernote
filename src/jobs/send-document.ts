@@ -20,10 +20,16 @@ import type { Badge, BlobTransfer, Clock, Notifier, Stitcher } from '@shared/por
 import type { PageSize } from '@domain/conversion';
 import type { FullPageError, FullPageResult } from '@capture/capture-fullpage';
 import { type CaptureMode, type CapturedDocument } from '@domain/capture';
-import { contentTypeFor, DEFAULT_RENDER_OPTIONS, type OutputFormat } from '@domain/conversion';
+import {
+  contentTypeFor,
+  DEFAULT_RENDER_OPTIONS,
+  type OutputFormat,
+  type Provenance,
+} from '@domain/conversion';
 import { type Target } from '@domain/settings';
 import { type DeliveryFailure } from '@domain/delivery';
 import { completeFinish, type JobState } from '@domain/job';
+import { resolveProvenance } from './resolve-provenance';
 import { buildUploadFilename } from '@shared/filename';
 import type { DeliveryPort, UploadInput } from '@delivery/delivery-port';
 import { resolveDestination } from '@delivery/resolve-destination';
@@ -51,6 +57,12 @@ import {
 export interface PageContext {
   /** Page hostname for the filename fallback (F6-FR3). */
   hostname: string;
+  /**
+   * Full active-tab URL, used as the provenance source URL when the opt-in
+   * "Add source & time" toggle is on (CP3). Optional so an older caller that
+   * only supplies a hostname still type-checks; provenance is skipped if absent.
+   */
+  url?: string;
 }
 
 /** Inputs that pick how this particular send runs (toolbar default or one-off). */
@@ -64,6 +76,12 @@ export interface SendRequest {
   confirmFilename: boolean;
   /** Include images in the Reader send (per-page "Include images"; default on). */
   includeImages: boolean;
+  /**
+   * Stamp the source URL + capture time onto the output ("Add source & time";
+   * default off). Applies to Reader (PDF/EPUB) and Full Page; never to a
+   * pre-rendered `source` pass-through (CP3).
+   */
+  includeProvenance: boolean;
   page: PageContext;
   /**
    * Pre-rendered bytes to upload as-is, bypassing capture + render. Used when the
@@ -182,13 +200,16 @@ export async function sendDocument(
     return fail('not-connected', 'Not connected', 'failed');
   }
 
-  // Resolve the bytes to upload: either a pre-rendered source (PDF page sent
-  // as-is) or capture -> render. `blobHandle` is set only for the render path so
-  // its IndexedDB blob is cleaned up; a source upload has no handle.
+  // Bytes to upload: a pre-rendered source (sent as-is) or capture -> render.
+  // `blobHandle` is set only for the render path (its IndexedDB blob is cleaned up).
   let bytes: Uint8Array;
   let contentType: string;
   let title: string;
   let blobHandle: string | undefined;
+
+  // ONE capture instant per send: the provenance stamp (CP3) and filename date agree.
+  const capturedAtMs = deps.clock.now();
+  const provenance = resolveProvenance(req, capturedAtMs, deps.clock.timeZone());
 
   if (req.source) {
     bytes = req.source.bytes;
@@ -197,8 +218,7 @@ export async function sendDocument(
   } else if (req.mode === 'fullpage') {
     // Full Page (FP4-FR4): scroll-capture the whole document, then stitch the
     // tiles into an image-based PDF — no Readability reflow, no renderDocument.
-    // The collaborators are wired by composition; without them this build cannot
-    // run Full Page, so fail with an actionable message rather than crash.
+    // The collaborators are wired by composition; without them fail actionably.
     if (deps.fullpage === undefined) {
       await deps.notifier.notify(noteCaptureFailed('Full Page capture is unavailable.'));
       await deps.badge.set('error');
@@ -227,7 +247,11 @@ export async function sendDocument(
     await deps.notifier.notify(NOTE_CONVERTING);
     let stitched: Awaited<ReturnType<Stitcher['stitch']>>;
     try {
-      stitched = await deps.fullpage.stitcher.stitch(captured.value.tiles, captured.value.geometry);
+      stitched = await deps.fullpage.stitcher.stitch(
+        captured.value.tiles,
+        captured.value.geometry,
+        provenance,
+      );
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : 'Could not build the PDF.';
       await releaseTiles(deps, captured.value.tiles);
@@ -263,7 +287,13 @@ export async function sendDocument(
       return fail('capture', captured.error.message, 'failed');
     }
 
-    const tail = await renderCaptured(deps, captured.value, req.format, req.includeImages);
+    const tail = await renderCaptured(
+      deps,
+      captured.value,
+      req.format,
+      req.includeImages,
+      provenance,
+    );
     if (!tail.ok) return tail;
     ({ bytes, contentType, title, blobHandle } = tail.value);
   }
@@ -284,7 +314,7 @@ export async function sendDocument(
     }
     return fail('delivery', NOTE_NO_DESTINATION_FOLDER.message, 'failed');
   }
-  const fileName = await resolveFileName(deps, req, port, destination, title);
+  const fileName = await resolveFileName(deps, req, port, destination, title, capturedAtMs);
 
   // uploading -> finishing -> done (apply -> PUT -> finish inside the adapter, I-3)
   await deps.notifier.notify(noteUploading(fileName));
@@ -322,9 +352,15 @@ async function renderCaptured(
   captured: CapturedDocument,
   format: OutputFormat,
   includeImages: boolean,
+  provenance: Provenance | undefined,
 ): Promise<Result<RenderedTail, SendError>> {
   await deps.notifier.notify(NOTE_CONVERTING);
-  const rendered = await renderDocument(deps.render, { document: captured, format, includeImages });
+  const rendered = await renderDocument(deps.render, {
+    document: captured,
+    format,
+    includeImages,
+    ...(provenance ? { provenance } : {}),
+  });
   if (!rendered.ok) {
     await deps.notifier.notify(noteConversionFailed(rendered.error.message));
     await deps.badge.set('error');
@@ -351,13 +387,14 @@ async function resolveFileName(
   port: DeliveryPort,
   directoryId: string,
   title: string,
+  epochMs: number,
 ): Promise<string> {
   const listed = await port.listFolders(directoryId);
   const existingNames = listed.ok ? listed.value.map((f) => f.name) : [];
   const suggested = buildUploadFilename({
     title,
     hostname: req.page.hostname,
-    epochMs: deps.clock.now(),
+    epochMs,
     format: req.format,
     existingNames,
   });

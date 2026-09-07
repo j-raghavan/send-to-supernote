@@ -16,14 +16,12 @@ import { resolveRenderOptions } from '@domain/conversion';
 
 // Mock the DOM-bound renderers (relative to render-parse-core's location).
 const renderEpub = vi.fn((_input: unknown) => Promise.resolve(new Uint8Array([1, 2, 3, 4])));
-const renderHtmlToPdf = vi.fn((_html: string, _pageSize: string) =>
-  Promise.resolve(new Uint8Array([9, 8, 7])),
-);
+const renderHtmlToPdf = vi.fn((..._args: unknown[]) => Promise.resolve(new Uint8Array([9, 8, 7])));
 vi.mock('../../../src/offscreen/epub-renderer', () => ({
   renderEpub: (input: unknown) => renderEpub(input),
 }));
 vi.mock('../../../src/offscreen/pdf-renderer', () => ({
-  renderHtmlToPdf: (html: string, pageSize: string) => renderHtmlToPdf(html, pageSize),
+  renderHtmlToPdf: (...args: unknown[]) => renderHtmlToPdf(...args),
 }));
 
 // Mock the Readability seam so we drive the happy-path vs body-fallback branches
@@ -131,7 +129,8 @@ describe('renderToBytes (routing — FF2-FR7)', () => {
 
     expect(renderEpub).not.toHaveBeenCalled();
     expect(renderHtmlToPdf).toHaveBeenCalledTimes(1);
-    expect(renderHtmlToPdf).toHaveBeenCalledWith(html, 'letter');
+    // No provenance → the 3rd (provenance) arg is undefined.
+    expect(renderHtmlToPdf).toHaveBeenCalledWith(html, 'letter', undefined);
     expect(Array.from(bytes)).toEqual([9, 8, 7]);
   });
 });
@@ -192,6 +191,46 @@ describe('renderToBytes — Include images off (per-send text-only)', () => {
 
     const input = renderEpub.mock.calls[0]![0] as { bodyHtml: string };
     expect(input.bodyHtml).toContain('data:image/png;base64,AAAA');
+  });
+});
+
+describe('renderToBytes — provenance injection (CP5)', () => {
+  const provenance = {
+    sourceUrl: 'https://example.com/a?x=1&y=2',
+    capturedAtMs: 1_750_000_000_000,
+    timeZone: 'America/Los_Angeles',
+  };
+
+  beforeEach(() => {
+    renderEpub.mockClear();
+    renderHtmlToPdf.mockClear();
+    document.title = '';
+  });
+
+  it('prepends the visible header to the PDF HTML and passes provenance to the renderer', async () => {
+    await renderToBytes('<p>pdf body</p>', { ...resolveRenderOptions('pdf', 'a4'), provenance });
+
+    const handedHtml = renderHtmlToPdf.mock.calls[0]![0] as string;
+    expect(handedHtml).toContain('capture-provenance'); // header prepended
+    expect(handedHtml.indexOf('capture-provenance')).toBeLessThan(handedHtml.indexOf('pdf body'));
+    // provenance is forwarded as the 3rd arg so the adapter can set PDF metadata.
+    expect(renderHtmlToPdf.mock.calls[0]![2]).toEqual(provenance);
+  });
+
+  it('forwards the provenance value to the EPUB builder (which derives dc:* + the header)', async () => {
+    await renderToBytes('<h1>T</h1><p>body</p>', { ...resolveRenderOptions('epub'), provenance });
+
+    const input = renderEpub.mock.calls[0]![0] as { provenance?: unknown; bodyHtml: string };
+    expect(input.provenance).toEqual(provenance);
+    // The header is the builder's job — never pre-injected into the body here.
+    expect(input.bodyHtml).not.toContain('capture-provenance');
+  });
+
+  it('leaves output unchanged when provenance is absent (off-path)', async () => {
+    await renderToBytes('<p>pdf body</p>', resolveRenderOptions('pdf', 'a4'));
+    const handedHtml = renderHtmlToPdf.mock.calls[0]![0] as string;
+    expect(handedHtml).not.toContain('capture-provenance');
+    expect(renderHtmlToPdf.mock.calls[0]![2]).toBeUndefined();
   });
 });
 

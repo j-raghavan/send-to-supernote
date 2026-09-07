@@ -61,4 +61,56 @@ describe('buildEpubFiles (F3-FR3 / R-6)', () => {
       'OEBPS/chapter.xhtml',
     ]);
   });
+
+  describe('provenance (CP5-FR3)', () => {
+    const withProvenance: EpubInput = {
+      ...input,
+      provenance: {
+        sourceUrl: 'https://example.com/a?x=1&y=2',
+        capturedAtMs: 1_750_000_000_000, // 2025-06-15T15:06:40.000Z
+        timeZone: 'America/Los_Angeles',
+      },
+    };
+
+    it('writes escaped dc:source and dc:date into content.opf metadata', () => {
+      const opf = buildEpubFiles(withProvenance).find((f) => f.path === 'OEBPS/content.opf');
+      expect(opf?.content).toContain('<dc:source>https://example.com/a?x=1&amp;y=2</dc:source>');
+      expect(opf?.content).toContain('<dc:date>2025-06-15T15:06:40.000Z</dc:date>');
+    });
+
+    it('injects the real visible header (URL + time) immediately after the <h1> in the chapter', () => {
+      const chapter = buildEpubFiles(withProvenance).find((f) => f.path === 'OEBPS/chapter.xhtml');
+      expect(chapter?.content).toContain('<h1>My Article</h1><aside class="capture-provenance"');
+      expect(chapter?.content).toContain('href="https://example.com/a?x=1&amp;y=2"');
+      expect(chapter?.content).toContain('Captured: 2025-06-15');
+      // The header sits before the body content.
+      expect(chapter!.content.indexOf('capture-provenance')).toBeLessThan(
+        chapter!.content.indexOf('<p>Lorem ipsum.</p>'),
+      );
+    });
+
+    it('NEVER emits an in-body <meta> (MuPDF 1.17 halt guard)', () => {
+      const chapter = buildEpubFiles(withProvenance).find((f) => f.path === 'OEBPS/chapter.xhtml');
+      const body = chapter!.content.slice(chapter!.content.indexOf('<body>'));
+      expect(body).not.toContain('<meta');
+    });
+
+    it('omits dc:source/dc:date and the header when provenance is absent (off-path)', () => {
+      const files = buildEpubFiles(input);
+      const opf = files.find((f) => f.path === 'OEBPS/content.opf');
+      const chapter = files.find((f) => f.path === 'OEBPS/chapter.xhtml');
+      expect(opf?.content).not.toContain('<dc:source>');
+      expect(opf?.content).not.toContain('<dc:date>');
+      expect(chapter?.content).toContain('<h1>My Article</h1><p>Lorem ipsum.</p>');
+    });
+
+    it('writes only dc:date when the URL is blank (CP4-FR5 parity)', () => {
+      const opf = buildEpubFiles({
+        ...withProvenance,
+        provenance: { ...withProvenance.provenance!, sourceUrl: '  ' },
+      }).find((f) => f.path === 'OEBPS/content.opf');
+      expect(opf?.content).not.toContain('<dc:source>');
+      expect(opf?.content).toContain('<dc:date>');
+    });
+  });
 });

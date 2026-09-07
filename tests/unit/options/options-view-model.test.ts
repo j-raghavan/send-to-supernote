@@ -16,6 +16,7 @@ const settings: Settings = {
   cloudFolderId: 'doc-7',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
 };
 
 describe('buildOptionsView (F7-FR1)', () => {

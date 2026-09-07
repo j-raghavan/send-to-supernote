@@ -54,4 +54,8 @@ describe('settings guards (FP1-FR1)', () => {
   it('defaults includeImages to true (per-send "Include images" on by default)', () => {
     expect(DEFAULT_SETTINGS.includeImages).toBe(true);
   });
+
+  it('defaults includeProvenance to false ("Add source & time" off — privacy-first)', () => {
+    expect(DEFAULT_SETTINGS.includeProvenance).toBe(false);
+  });
 });

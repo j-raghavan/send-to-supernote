@@ -23,6 +23,7 @@ import { toXhtml } from './html-to-xhtml';
 import { stripRemoteImages } from './strip-remote-images';
 import { stripImages } from './strip-images';
 import { stripHeadElements } from './strip-head-elements';
+import { buildProvenanceHeaderHtml } from './provenance';
 
 /**
  * Derive an EPUB title from the content's first <h1>, else the generic
@@ -51,6 +52,7 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
   // independent of whatever the in-page capture inlined. Strict `=== false` so an
   // older caller that omits the field keeps the images-on behavior.
   const source = options.includeImages === false ? stripImages(html) : html;
+  const provenance = options.provenance;
   if (renderRoute(options) === 'epub') {
     const provided = options.title?.trim();
     return renderEpub({
@@ -64,9 +66,15 @@ export async function renderToBytes(html: string, options: RenderOptions): Promi
       // the whole document instead of stopping at the first image or meta tag.
       bodyHtml: toXhtml(stripHeadElements(stripRemoteImages(source))),
       identifier: `urn:uuid:${crypto.randomUUID()}`,
+      // Provenance (CP5): the builder derives dc:source/dc:date + the visible
+      // header from the one value (NEVER an in-body <meta> — the MuPDF halt above).
+      ...(provenance ? { provenance } : {}),
     });
   }
-  return renderHtmlToPdf(source, options.pageSize);
+  // PDF (Reader HTML layout): prepend the visible provenance header to the HTML
+  // and stamp the source URL + capture time into the PDF document properties.
+  const pdfHtml = provenance ? `${buildProvenanceHeaderHtml(provenance)}${source}` : source;
+  return renderHtmlToPdf(pdfHtml, options.pageSize, provenance);
 }
 
 /**

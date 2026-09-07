@@ -22,9 +22,10 @@
  * namespace) and NO IndexedDB (handle resolution is injected via `resolve`).
  */
 import type { PageGeometry } from '@capture/fullpage-plan';
-import type { PageSize } from '@domain/conversion';
+import type { PageSize, Provenance } from '@domain/conversion';
 import type { BlobHandle } from '@shared/ports';
 import { jsPDF } from 'jspdf';
+import { provenancePdfProperties, provenanceTextLines } from './provenance';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Part 1 — pure planner (no DOM)
@@ -113,13 +114,23 @@ export interface FullPagePlan {
 
 /**
  * Split `[0, total)` into contiguous `{ start, height }` bands of at most
- * `chunk` px, the last band being the remainder. `total` is always ≥ 1 here
- * (clamped by `planFullPage`), so there is always at least one band.
+ * `chunk` px, the last band being the remainder. The FIRST band may be shorter
+ * (`firstChunk`, e.g. a page whose top is reserved for a banner). `total` is
+ * always ≥ 1 here (clamped by `planFullPage`), so there is always at least one
+ * band.
  */
-function tile(total: number, chunk: number): { start: number; height: number }[] {
+function tile(
+  total: number,
+  chunk: number,
+  firstChunk: number = chunk,
+): { start: number; height: number }[] {
   const out: { start: number; height: number }[] = [];
-  for (let y = 0; y < total; y += chunk) {
-    out.push({ start: y, height: Math.min(chunk, total - y) });
+  let y = 0;
+  let size = firstChunk;
+  while (y < total) {
+    out.push({ start: y, height: Math.min(size, total - y) });
+    y += size;
+    size = chunk;
   }
   return out;
 }
@@ -128,8 +139,18 @@ function tile(total: number, chunk: number): { start: number; height: number }[]
  * Pure plan for stitching + paginating a full-page capture. All inputs are
  * numbers; every branch (cap-by-height, cap-by-pages, multi-band, single-band,
  * remainder slice, tiny/zero guard) is reachable from the arguments alone.
+ *
+ * `firstPageInsetPx` (device px) reserves the top of PAGE 1 — the provenance
+ * banner (CP6) is drawn there and the first slice is shortened by the same
+ * amount, so the banner never covers captured content. It is clamped so the
+ * first slice keeps at least 1 px, and it counts against the page cap so a
+ * capped capture still yields at most `maxPages` pages.
  */
-export function planFullPage(g: StitchGeometry, cap: FullPageCap = DEFAULT_CAP): FullPagePlan {
+export function planFullPage(
+  g: StitchGeometry,
+  cap: FullPageCap = DEFAULT_CAP,
+  firstPageInsetPx = 0,
+): FullPagePlan {
   const dpr = g.dpr > 0 ? g.dpr : 1;
   // Page band height is the CAPTURE WIDTH (device px) × the page's portrait
   // aspect, so every band has the same aspect ratio as the PDF page and tiles on
@@ -137,9 +158,13 @@ export function planFullPage(g: StitchGeometry, cap: FullPageCap = DEFAULT_CAP):
   const widthDevicePx = Math.max(1, Math.round(Math.max(0, g.width) * dpr));
   const pageHeightPx = Math.max(1, Math.round(widthDevicePx * PAGE_ASPECT[g.pageSize]));
 
+  // Page 1 gives up `inset` px to the banner strip (clamped so it keeps ≥ 1 px).
+  const inset = Math.min(Math.max(0, Math.round(firstPageInsetPx)), pageHeightPx - 1);
   // CSS height → device px, then clamp to BOTH caps (height and page count).
+  // The page-count cap counts the shortened page 1, so the PDF never exceeds
+  // `maxPages` pages even with a banner (the capture/paginate cap coupling).
   const rawDeviceHeight = Math.max(0, g.totalHeight) * dpr;
-  const pageCapHeight = cap.maxPages * pageHeightPx;
+  const pageCapHeight = cap.maxPages * pageHeightPx - inset;
   const heightCap = Math.min(cap.maxHeightPx, pageCapHeight);
   const truncated = rawDeviceHeight > heightCap;
   // Guard zero/tiny heights: always at least one band/slice worth of canvas.
@@ -151,7 +176,7 @@ export function planFullPage(g: StitchGeometry, cap: FullPageCap = DEFAULT_CAP):
       startY: b.start,
       height: b.height,
     })),
-    pageSlices: tile(totalDeviceHeight, pageHeightPx).map((s) => ({
+    pageSlices: tile(totalDeviceHeight, pageHeightPx, pageHeightPx - inset).map((s) => ({
       sourceY: s.start,
       height: s.height,
     })),
@@ -200,10 +225,19 @@ export async function stitchFullPageToPdf(
   geometry: StitchGeometry,
   resolve: (h: BlobHandle) => Promise<Uint8Array | undefined>,
   cap: FullPageCap = DEFAULT_CAP,
+  provenance?: Provenance,
 ): Promise<Uint8Array> {
-  const plan = planFullPage(geometry, cap);
+  const pdf = new jsPDF({ unit: 'pt', format: jsPdfFormat(geometry.pageSize) });
+  const pageWidthPt = pdf.internal.pageSize.getWidth();
+  const pageHeightPt = pdf.internal.pageSize.getHeight();
   const dpr = geometry.dpr > 0 ? geometry.dpr : 1;
   const widthPx = Math.max(1, Math.round(Math.max(0, geometry.width) * dpr));
+  // The provenance banner (CP6) owns the top of page 1: reserve its height in
+  // the plan (device px, via the page's pt→px scale) so page 1's image starts
+  // below it and no captured content is hidden.
+  const bannerLines = provenance ? provenanceTextLines(provenance) : [];
+  const bannerPt = provenance ? bannerHeightPt(bannerLines) : 0;
+  const plan = planFullPage(geometry, cap, (bannerPt / pageWidthPt) * widthPx);
 
   // 1. Build the tall stitched canvas.
   const canvas = new OffscreenCanvas(widthPx, plan.totalDeviceHeight);
@@ -235,9 +269,10 @@ export async function stitchFullPageToPdf(
   }
 
   // 2. Paginate: one page-height band → one PDF page via addImage.
-  const pdf = new jsPDF({ unit: 'pt', format: jsPdfFormat(geometry.pageSize) });
-  const pageWidthPt = pdf.internal.pageSize.getWidth();
-  const pageHeightPt = pdf.internal.pageSize.getHeight();
+  // Provenance file metadata (CP6) — shared wording with the Reader PDF path.
+  if (provenance) {
+    pdf.setProperties(provenancePdfProperties(provenance));
+  }
 
   for (let i = 0; i < plan.pageSlices.length; i += 1) {
     const slice = plan.pageSlices[i]!;
@@ -268,12 +303,53 @@ export async function stitchFullPageToPdf(
     }
     // Band aspect == page aspect (page height is width-proportional), so a full
     // slice maps on at exactly pageHeightPt; the final remainder slice is shorter.
-    // `Math.min` is a defensive clamp against rounding overshoot.
+    // Page 1 starts below the reserved banner strip. `Math.min` is a defensive
+    // clamp against rounding overshoot.
+    const topPt = i === 0 ? bannerPt : 0;
     const renderHeightPt = (slice.height / widthPx) * pageWidthPt;
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, pageWidthPt, Math.min(renderHeightPt, pageHeightPt));
+    pdf.addImage(
+      dataUrl,
+      'JPEG',
+      0,
+      topPt,
+      pageWidthPt,
+      Math.min(renderHeightPt, pageHeightPt - topPt),
+    );
+  }
+
+  // Visible provenance banner (CP6): the Full Page PDF is an image, so the
+  // header is DRAWN (not HTML) — small grey text on a white strip in the space
+  // reserved above page 1's image.
+  if (provenance) {
+    drawProvenanceBanner(pdf, bannerLines, pageWidthPt);
   }
 
   return new Uint8Array(pdf.output('arraybuffer'));
+}
+
+/** Banner typography (pt): small grey text, one line per provenance entry. */
+const BANNER_FONT_PT = 8;
+const BANNER_LINE_PT = BANNER_FONT_PT + 3;
+const BANNER_PAD_PT = 6;
+
+/** Height of the reserved page-1 strip for the given banner lines (pt). */
+function bannerHeightPt(lines: readonly string[]): number {
+  return BANNER_PAD_PT * 2 + lines.length * BANNER_LINE_PT;
+}
+
+/**
+ * Draw the source/time banner into the strip reserved above page 1's image
+ * (CP6): a white background (so the strip is never JPEG-grey) + the text lines.
+ */
+function drawProvenanceBanner(pdf: jsPDF, lines: readonly string[], pageWidthPt: number): void {
+  pdf.setPage(1);
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, pageWidthPt, bannerHeightPt(lines), 'F');
+  pdf.setTextColor(90, 90, 90);
+  pdf.setFontSize(BANNER_FONT_PT);
+  lines.forEach((line, i) => {
+    pdf.text(line, BANNER_PAD_PT, BANNER_PAD_PT + (i + 1) * BANNER_LINE_PT - 3);
+  });
 }
 
 /** Read a JPEG Blob's bytes as a base64 data URL for `jsPDF.addImage`. */

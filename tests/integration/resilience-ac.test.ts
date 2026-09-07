@@ -247,6 +247,7 @@ describe('JobHistory — records BOTH terminals, capped + local-only (F6-FR6 / F
     target: 'cloud',
     confirmFilename: false,
     includeImages: true,
+    includeProvenance: false,
     page: { hostname: 'example.com' },
   };
 

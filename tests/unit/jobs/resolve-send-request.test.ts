@@ -9,6 +9,7 @@ const settings: Settings = {
   cloudFolderId: 'doc-7',
   confirmFilename: false,
   includeImages: true,
+  includeProvenance: false,
 };
 
 const page = { hostname: 'example.com' };
@@ -110,6 +111,31 @@ describe('resolveSendRequest (F6-FR1)', () => {
         includeImages: true,
       });
       expect(req.includeImages).toBe(true);
+    });
+  });
+
+  describe('includeProvenance ("Add source & time", default OFF)', () => {
+    it('carries the stored setting when there is no override (false)', () => {
+      expect(resolveSendRequest(settings, page).includeProvenance).toBe(false);
+    });
+
+    it('carries the stored setting when there is no override (true)', () => {
+      expect(
+        resolveSendRequest({ ...settings, includeProvenance: true }, page).includeProvenance,
+      ).toBe(true);
+    });
+
+    it('lets a one-off override win over the stored setting (pins ??)', () => {
+      expect(
+        resolveSendRequest({ ...settings, includeProvenance: false }, page, {
+          includeProvenance: true,
+        }).includeProvenance,
+      ).toBe(true);
+      expect(
+        resolveSendRequest({ ...settings, includeProvenance: true }, page, {
+          includeProvenance: false,
+        }).includeProvenance,
+      ).toBe(false);
     });
   });
 });

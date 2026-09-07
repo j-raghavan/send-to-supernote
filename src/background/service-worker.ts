@@ -9,7 +9,8 @@
  */
 /* c8 ignore start */
 import { recordedSend } from '@jobs/recorded-send';
-import { resolveSendRequest } from '@jobs/resolve-send-request';
+import type { PageContext } from '@jobs/send-document';
+import { resolveSendRequest, type SendOverrides } from '@jobs/resolve-send-request';
 import { retryPending } from '@jobs/retry-pending';
 import { runHealthCheck } from '@jobs/health-check';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
@@ -27,8 +28,8 @@ import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
 import { normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import { api } from '@shared/browser-api';
-import type { CaptureMode } from '@domain/capture';
 import { webCryptoSha256Hex } from './crypto';
+import { probePdf } from './pdf-probe';
 import { registerContextMenus, onContextMenuClicked } from './context-menus';
 import {
   http,
@@ -52,11 +53,13 @@ import {
 } from './composition';
 import { type Diagnosis } from '@jobs/connection-doctor';
 
+/** Click-time overrides a send can carry (popup toggles, context-menu mode). */
+type SendArgs = Pick<SendOverrides, 'mode' | 'includeImages' | 'includeProvenance'>;
+
 async function runSend(
   tabId: number,
-  hostname: string,
-  mode?: CaptureMode,
-  includeImages?: boolean,
+  page: PageContext,
+  args: SendArgs,
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const target = settings.target;
@@ -79,16 +82,11 @@ async function runSend(
   try {
     // If the page is already a document (PDF in the browser viewer), send the
     // bytes as-is — there is nothing to capture/convert.
-    const pdf = await probePdf(tabId);
-    const request = resolveSendRequest(
-      settings,
-      { hostname },
-      {
-        ...(mode !== undefined ? { mode } : {}),
-        ...(pdf ? { format: 'pdf' as const } : {}),
-        ...(includeImages !== undefined ? { includeImages } : {}),
-      },
-    );
+    const pdf = await probePdf(tabId, http);
+    const request = resolveSendRequest(settings, page, {
+      ...args,
+      ...(pdf ? { format: 'pdf' as const } : {}),
+    });
     const finalRequest = {
       ...request,
       ...(folderId !== undefined ? { folderId } : {}),
@@ -114,42 +112,6 @@ async function runSend(
     console.warn('[send-to-supernote] send threw:', message);
     await badge.set('error');
     return { ok: false, error: message };
-  }
-}
-
-/**
- * Detect a PDF page (Chrome's built-in viewer reports `document.contentType ===
- * "application/pdf"`; the URL often has no `.pdf` extension, e.g. arXiv) and
- * fetch its bytes. The send click grants `activeTab` host access, so the SW may
- * fetch the active tab's URL. Returns undefined for normal HTML pages.
- */
-async function probePdf(tabId: number): Promise<{ bytes: Uint8Array; title: string } | undefined> {
-  const [injection] = await api.scripting.executeScript({
-    target: { tabId },
-    func: () => ({ contentType: document.contentType, url: location.href, title: document.title }),
-  });
-  const info = injection?.result as
-    | { contentType?: string; url?: string; title?: string }
-    | undefined;
-  if (info?.contentType !== 'application/pdf' || !info.url) {
-    return undefined;
-  }
-  const downloaded = await http.getBytes(info.url);
-  if (downloaded.bytes === undefined) {
-    throw new Error(`Could not download the PDF (HTTP ${downloaded.status}).`);
-  }
-  const title = info.title && info.title.trim().length > 0 ? info.title : pdfTitleFromUrl(info.url);
-  return { bytes: downloaded.bytes, title };
-}
-
-/** Derive a document title from a PDF URL's last path segment. */
-function pdfTitleFromUrl(url: string): string {
-  try {
-    const path = new URL(url).pathname.replace(/\/+$/, '');
-    const last = path.slice(path.lastIndexOf('/') + 1);
-    return (last || 'document').replace(/\.pdf$/i, '');
-  } catch {
-    return 'document';
   }
 }
 
@@ -426,13 +388,10 @@ api.runtime.onStartup.addListener(() => {
 // toolbar click opens the popup (with its Send button) and onClicked never fires.
 
 onContextMenuClicked((mode) => {
-  void sendActiveTab(mode);
+  void sendActiveTab({ mode });
 });
 
-async function sendActiveTab(
-  mode?: CaptureMode,
-  includeImages?: boolean,
-): Promise<{ ok: boolean; error?: string }> {
+async function sendActiveTab(args: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     return { ok: false, error: 'No active tab to send.' };
@@ -445,7 +404,11 @@ async function sendActiveTab(
       error: 'This page can’t be captured. Open a normal web page and try again.',
     };
   }
-  return runSend(tab.id, hostnameOf(tab.url), mode, includeImages);
+  return runSend(
+    tab.id,
+    { hostname: hostnameOf(tab.url), ...(tab.url !== undefined ? { url: tab.url } : {}) },
+    args,
+  );
 }
 
 // Startup marker — confirms in the SW console which build is live. Reopening the
@@ -480,13 +443,18 @@ api.runtime.onMessage.addListener(
       password?: string;
       baseUrl?: string;
       includeImages?: boolean;
+      includeProvenance?: boolean;
     };
     if (msg.type === 'send') {
-      // The popup sends the click-time "Include images" value; an older popup
-      // that omits it leaves `includeImages` undefined, so resolveSendRequest
-      // falls back to the persisted settings.includeImages.
-      const includeImages = typeof msg.includeImages === 'boolean' ? msg.includeImages : undefined;
-      void sendActiveTab(undefined, includeImages).then(sendResponse);
+      // The popup sends the click-time "Include images" / "Add source & time"
+      // values; an older popup that omits either leaves it out, so
+      // resolveSendRequest falls back to the persisted settings.
+      void sendActiveTab({
+        ...(typeof msg.includeImages === 'boolean' ? { includeImages: msg.includeImages } : {}),
+        ...(typeof msg.includeProvenance === 'boolean'
+          ? { includeProvenance: msg.includeProvenance }
+          : {}),
+      }).then(sendResponse);
       return true; // keep the channel open so the popup can show the outcome
     }
     if (msg.type === 'reconnected' && msg.target !== undefined) {

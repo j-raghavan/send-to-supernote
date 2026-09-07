@@ -13,6 +13,19 @@ export type { OutputFormat } from '@shared/filename';
 /** Page geometry for paginated PDF output (F3-FR2). */
 export type PageSize = 'a4' | 'letter';
 
+/**
+ * Capture provenance (CP4) — where + when a send was captured. A pure value
+ * object: the source URL, the capture instant (epoch ms, stamped from the Clock
+ * port in the saga), and the IANA time zone resolved alongside it (so the
+ * human-readable header is deterministic in tests). The header/metadata builders
+ * live in `@conversion/provenance`; this is the shared contract.
+ */
+export interface Provenance {
+  sourceUrl: string;
+  capturedAtMs: number;
+  timeZone?: string;
+}
+
 export interface RenderOptions {
   format: OutputFormat;
   /** Page size for PDF pagination (ignored for reflowable EPUB). */
@@ -33,6 +46,13 @@ export interface RenderOptions {
    * the output).
    */
   title?: string;
+  /**
+   * Opt-in capture provenance (CP5). When present, the source URL + capture time
+   * are stamped onto the rendered output: a visible header plus file metadata
+   * (PDF `setProperties`; EPUB `content.opf` `dc:source`/`dc:date`). Absent →
+   * output is unchanged.
+   */
+  provenance?: Provenance;
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
