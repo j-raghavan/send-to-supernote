@@ -232,7 +232,8 @@ export async function stitchFullPageToPdf(
   // The provenance banner (CP6) owns the top of page 1: reserve its height in
   // the plan (device px, via the page's pt→px scale) so page 1's image starts
   // below it and no captured content is hidden.
-  const bannerPt = provenance ? bannerHeightPt(provenanceTextLines(provenance)) : 0;
+  const bannerLines = provenance ? provenanceTextLines(provenance) : [];
+  const bannerPt = provenance ? bannerHeightPt(bannerLines) : 0;
   const plan = planFullPage(geometry, cap, (bannerPt / pageWidthPt) * widthPx);
 
   // 1. Build the tall stitched canvas.
@@ -317,7 +318,7 @@ export async function stitchFullPageToPdf(
   // header is DRAWN (not HTML) — small grey text on a white strip in the space
   // reserved above page 1's image.
   if (provenance) {
-    drawProvenanceBanner(pdf, provenanceTextLines(provenance), pageWidthPt);
+    drawProvenanceBanner(pdf, bannerLines, pageWidthPt);
   }
 
   return new Uint8Array(pdf.output('arraybuffer'));

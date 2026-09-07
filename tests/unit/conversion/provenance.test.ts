@@ -49,6 +49,13 @@ describe('formatCapturedAt (CP4-FR2) — deterministic local time + offset', () 
     expect(formatCapturedAt(EPOCH).length).toBeGreaterThan(0);
   });
 
+  it('contains only plain ASCII spaces (no ICU U+202F / NBSP — jsPDF WinAnsi fonts cannot encode them)', () => {
+    for (const zone of [LA, TOKYO, 'Europe/Berlin', undefined]) {
+      expect(formatCapturedAt(EPOCH, zone)).not.toMatch(/[\u202f\u00a0]/);
+    }
+    expect(formatCapturedAt(EPOCH, LA)).toMatch(/\d{2}:\d{2} [ap]\.?m\.? PDT/i);
+  });
+
   it('shows the abbreviation plus the offset once for a zone that has an abbreviation', () => {
     const out = formatCapturedAt(EPOCH, LA);
     expect(out).toMatch(/PDT \(GMT-7\)$/);

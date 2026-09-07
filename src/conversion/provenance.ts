@@ -58,11 +58,15 @@ function formatInZone(date: Date, timeZone: string | undefined): string {
     timeZoneName: 'short',
   }).formatToParts(date);
   const shortName = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
-  // en-CA renders `YYYY-MM-DD, hh:mm a.m. TZ`; normalize the comma to a space.
+  // en-CA renders `YYYY-MM-DD, hh:mm a.m. TZ`; normalize the comma to a space
+  // and ICU's NARROW NO-BREAK SPACE (U+202F, before `a.m.`) / NBSP to a plain
+  // space: jsPDF's WinAnsi standard fonts cannot encode U+202F and would switch
+  // the whole banner line to letter-spaced 2-byte garbage.
   const readable = parts
     .map((part) => part.value)
     .join('')
-    .replace(', ', ' ');
+    .replace(', ', ' ')
+    .replace(/[\u202f\u00a0]/g, ' ');
   if (/^(GMT|UTC)/i.test(shortName)) {
     return readable;
   }

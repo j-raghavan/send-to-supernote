@@ -29,6 +29,7 @@ import { StorageKeys } from '@shared/storage-keys';
 import { api } from '@shared/browser-api';
 import type { CaptureMode } from '@domain/capture';
 import { webCryptoSha256Hex } from './crypto';
+import { probePdf } from './pdf-probe';
 import { registerContextMenus, onContextMenuClicked } from './context-menus';
 import {
   http,
@@ -81,7 +82,7 @@ async function runSend(
   try {
     // If the page is already a document (PDF in the browser viewer), send the
     // bytes as-is — there is nothing to capture/convert.
-    const pdf = await probePdf(tabId);
+    const pdf = await probePdf(tabId, http);
     const request = resolveSendRequest(
       settings,
       { hostname, ...(url !== undefined ? { url } : {}) },
@@ -117,42 +118,6 @@ async function runSend(
     console.warn('[send-to-supernote] send threw:', message);
     await badge.set('error');
     return { ok: false, error: message };
-  }
-}
-
-/**
- * Detect a PDF page (Chrome's built-in viewer reports `document.contentType ===
- * "application/pdf"`; the URL often has no `.pdf` extension, e.g. arXiv) and
- * fetch its bytes. The send click grants `activeTab` host access, so the SW may
- * fetch the active tab's URL. Returns undefined for normal HTML pages.
- */
-async function probePdf(tabId: number): Promise<{ bytes: Uint8Array; title: string } | undefined> {
-  const [injection] = await api.scripting.executeScript({
-    target: { tabId },
-    func: () => ({ contentType: document.contentType, url: location.href, title: document.title }),
-  });
-  const info = injection?.result as
-    | { contentType?: string; url?: string; title?: string }
-    | undefined;
-  if (info?.contentType !== 'application/pdf' || !info.url) {
-    return undefined;
-  }
-  const downloaded = await http.getBytes(info.url);
-  if (downloaded.bytes === undefined) {
-    throw new Error(`Could not download the PDF (HTTP ${downloaded.status}).`);
-  }
-  const title = info.title && info.title.trim().length > 0 ? info.title : pdfTitleFromUrl(info.url);
-  return { bytes: downloaded.bytes, title };
-}
-
-/** Derive a document title from a PDF URL's last path segment. */
-function pdfTitleFromUrl(url: string): string {
-  try {
-    const path = new URL(url).pathname.replace(/\/+$/, '');
-    const last = path.slice(path.lastIndexOf('/') + 1);
-    return (last || 'document').replace(/\.pdf$/i, '');
-  } catch {
-    return 'document';
   }
 }
 
