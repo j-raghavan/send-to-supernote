@@ -31,9 +31,16 @@ export interface CapturedImage {
 // Matches a whole <img ...> tag, skipping over quoted attribute values so a `>`
 // inside an attribute (e.g. alt="a>b") does not truncate the match. src/srcset
 // operate tag-scoped on the match.
+//
+// The attribute names must be the REAL `src` / `srcset`, not the tail of a
+// lazy-loader's `data-src` / `data-lazy-srcset`: a plain `\b` sits happily
+// between the `-` and the `s`, so on a lazysizes page (`data-src` listed before
+// `src`) the data URI would land in `data-src`, `src` would stay remote, and
+// the EPUB step would drop the image. The lookbehind rejects a preceding word
+// char or hyphen.
 const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
-const SRC_ATTR = /\bsrc\s*=\s*("([^"]*)"|'([^']*)')/i;
-const SRCSET_ATTR = /\bsrcset\s*=\s*("[^"]*"|'[^']*')/i;
+const SRC_ATTR = /(?<![\w-])src\s*=\s*("([^"]*)"|'([^']*)')/i;
+const SRCSET_ATTR = /(?<![\w-])srcset\s*=\s*("[^"]*"|'[^']*')/i;
 
 // Decode the HTML entities a serializer emits in attribute values, in ONE pass
 // (so `&amp;lt;` decodes to `&lt;`, not `<`). Named set + numeric dec/hex.

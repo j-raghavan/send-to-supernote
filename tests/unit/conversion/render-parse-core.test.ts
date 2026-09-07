@@ -274,6 +274,22 @@ describe('parseReader (FF2-FR3/FR4)', () => {
     expect(captured?.head?.firstElementChild?.tagName.toLowerCase()).toBe('base');
   });
 
+  it('protects capture-inlined data: images from the lazy-image rewrite BEFORE Readability runs', () => {
+    let classAtExtract: string | null | undefined;
+    extractReaderFromDocument.mockImplementation((doc) => {
+      classAtExtract = doc.querySelector('img')?.getAttribute('class');
+      return { title: 'A', content: '<p>enough content for a non-empty extract.</p>', length: 200 };
+    });
+
+    parseReader(
+      '<img class="lazyloaded" src="data:image/png;base64,AAAA" data-src="https://cdn/x.jpg">',
+      'https://example.com/',
+    );
+
+    // Readability must see the <img> with its lazy class already gone.
+    expect(classAtExtract).toBeNull();
+  });
+
   it('falls back to the page <body> (scripts/styles/embeds stripped) when Readability misses', () => {
     // Empty-extract (length below the floor) forces the body fallback.
     extractReaderFromDocument.mockReturnValue({ title: '', content: '', length: 0 });

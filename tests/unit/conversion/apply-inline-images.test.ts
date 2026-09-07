@@ -58,6 +58,36 @@ describe('applyInlinedImages', () => {
     expect(out).not.toContain('srcset');
   });
 
+  it('rewrites the REAL src when a lazy-loader data-src precedes it (lazysizes order)', () => {
+    const html =
+      '<img class="lazyloaded" data-src="https://x/a.png" src="https://x/a.png" alt="p">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    const out = applyInlinedImages(html, images);
+
+    expect(out).toBe(`<img class="lazyloaded" data-src="https://x/a.png" src="${PNG}" alt="p">`);
+  });
+
+  it('leaves data-srcset / data-lazy-srcset intact while stripping the real srcset', () => {
+    const html =
+      '<img data-lazy-srcset="https://x/a.png 300w" src="https://x/a.png" srcset="https://x/a.png 300w" data-srcset="https://x/a.png 2x">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    const out = applyInlinedImages(html, images);
+
+    // (The stripped srcset leaves a double space; the HTML parser ignores it.)
+    expect(out).toBe(
+      `<img data-lazy-srcset="https://x/a.png 300w" src="${PNG}"  data-srcset="https://x/a.png 2x">`,
+    );
+  });
+
+  it('does not treat a data-src-only <img> (no real src) as having a src', () => {
+    const html = '<img data-src="https://x/a.png">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(html);
+  });
+
   it('leaves an un-captured <img> (src not in images) unchanged', () => {
     const html = '<img src="https://x/other.png">';
     const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];

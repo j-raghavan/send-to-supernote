@@ -23,6 +23,7 @@ import { toXhtml } from './html-to-xhtml';
 import { stripRemoteImages } from './strip-remote-images';
 import { stripImages } from './strip-images';
 import { stripHeadElements } from './strip-head-elements';
+import { protectInlinedImages } from './protect-inlined-images';
 import { buildProvenanceHeaderHtml, isoDate } from './provenance';
 
 /**
@@ -94,6 +95,11 @@ export function parseReader(html: string, url: string): ReaderExtract {
   const base = doc.createElement('base');
   base.href = url;
   doc.head?.prepend(base);
+
+  // Capture-inlined `data:` images must survive Readability: its lazy-image
+  // fixer would otherwise copy a `data-src`-style REMOTE URL back over the data
+  // URI of any "lazy"-classed <img>, and the EPUB step then has to drop it.
+  protectInlinedImages(doc);
 
   const article = extractReaderFromDocument(doc);
   if (!isEmptyReaderExtract(article)) {
