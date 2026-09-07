@@ -32,7 +32,7 @@ Cloud server.
 
 The popup has an **Add source & time** toggle that is **off by default**. When you
 turn it on, each send stamps the page's **original URL** and the **capture time**
-into the file you upload — both as a small visible header and as file metadata
+into the file you upload, both as a small visible header and as file metadata
 (PDF document properties; EPUB `dc:source`/`dc:date`). This is convenient for
 tracking where a saved document came from, but it embeds your browsing source in
 the file, so it is **opt-in per send**. The preference is stored locally only; the
@@ -40,7 +40,7 @@ URL is the page's own address and goes only to the Supernote destination you
 choose, never to any third party.
 
 > **Note on URLs with query strings.** The **full** page URL is embedded verbatim
-> when this is on — including any query parameters, which can sometimes carry
+> when this is on, including any query parameters, which can sometimes carry
 > session tokens or one-time links. Leave the toggle off (the default) for such
 > pages, or remove sensitive query parameters before sending.
 

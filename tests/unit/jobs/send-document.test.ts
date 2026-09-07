@@ -123,7 +123,13 @@ describe('sendDocument saga (F6-FR1, drives the job FSM)', () => {
     const renderer = new FakeRenderer(2048, h.blobs);
     h.deps.render = { renderer };
 
-    await sendDocument(h.deps, req({ includeProvenance: true, page: { hostname: 'example.com' } }));
+    await sendDocument(
+      h.deps,
+      req({
+        includeProvenance: true,
+        page: { hostname: 'example.com', url: 'https://example.com/p' },
+      }),
+    );
 
     expect(renderer.calls[0]!.options.provenance?.capturedAtMs).toBe(Date.UTC(2026, 4, 28));
     expect(h.port.uploadCalls[0]!.fileName).toBe('example.com-2026-05-28.pdf');

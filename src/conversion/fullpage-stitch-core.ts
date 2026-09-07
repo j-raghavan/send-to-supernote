@@ -143,8 +143,8 @@ function tile(
  * `firstPageInsetPx` (device px) reserves the top of PAGE 1 — the provenance
  * banner (CP6) is drawn there and the first slice is shortened by the same
  * amount, so the banner never covers captured content. It is clamped so the
- * first slice keeps at least 1 px; the height caps are unaffected (a reserved
- * strip can push the last remainder onto one more page).
+ * first slice keeps at least 1 px, and it counts against the page cap so a
+ * capped capture still yields at most `maxPages` pages.
  */
 export function planFullPage(
   g: StitchGeometry,
@@ -158,9 +158,13 @@ export function planFullPage(
   const widthDevicePx = Math.max(1, Math.round(Math.max(0, g.width) * dpr));
   const pageHeightPx = Math.max(1, Math.round(widthDevicePx * PAGE_ASPECT[g.pageSize]));
 
+  // Page 1 gives up `inset` px to the banner strip (clamped so it keeps ≥ 1 px).
+  const inset = Math.min(Math.max(0, Math.round(firstPageInsetPx)), pageHeightPx - 1);
   // CSS height → device px, then clamp to BOTH caps (height and page count).
+  // The page-count cap counts the shortened page 1, so the PDF never exceeds
+  // `maxPages` pages even with a banner (the capture/paginate cap coupling).
   const rawDeviceHeight = Math.max(0, g.totalHeight) * dpr;
-  const pageCapHeight = cap.maxPages * pageHeightPx;
+  const pageCapHeight = cap.maxPages * pageHeightPx - inset;
   const heightCap = Math.min(cap.maxHeightPx, pageCapHeight);
   const truncated = rawDeviceHeight > heightCap;
   // Guard zero/tiny heights: always at least one band/slice worth of canvas.
@@ -172,11 +176,10 @@ export function planFullPage(
       startY: b.start,
       height: b.height,
     })),
-    pageSlices: tile(
-      totalDeviceHeight,
-      pageHeightPx,
-      pageHeightPx - Math.min(Math.max(0, Math.round(firstPageInsetPx)), pageHeightPx - 1),
-    ).map((s) => ({ sourceY: s.start, height: s.height })),
+    pageSlices: tile(totalDeviceHeight, pageHeightPx, pageHeightPx - inset).map((s) => ({
+      sourceY: s.start,
+      height: s.height,
+    })),
     truncated,
   };
 }

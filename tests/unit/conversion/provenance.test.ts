@@ -8,7 +8,7 @@
  * as application/xml here (happy-dom DOMParser) to prove a strict reader won't
  * halt. `isoDate` is asserted exactly (it is pure UTC ISO-8601).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildProvenanceHeaderHtml,
   formatCapturedAt,
@@ -73,6 +73,34 @@ describe('formatCapturedAt (CP4-FR2) — deterministic local time + offset', () 
     expect(() => formatCapturedAt(EPOCH, 'Bogus/Zone')).not.toThrow();
     expect(formatCapturedAt(EPOCH, 'Bogus/Zone')).toBe(formatCapturedAt(EPOCH));
   });
+
+  it('degrades to the plain Date string for an invalid instant instead of throwing', () => {
+    expect(() => formatCapturedAt(Number.NaN, LA)).not.toThrow();
+    expect(formatCapturedAt(Number.NaN, LA)).toBe('Invalid Date');
+  });
+
+  describe('when the runtime lacks timeZoneName:"shortOffset" (Chrome < 95)', () => {
+    const Original = Intl.DateTimeFormat;
+    afterEach(() => vi.restoreAllMocks());
+
+    it('keeps the local time and just omits the offset suffix', () => {
+      vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (
+        locale?: string | string[],
+        options?: Intl.DateTimeFormatOptions,
+      ) {
+        if (options?.timeZoneName === 'shortOffset') {
+          throw new RangeError(
+            'Value shortOffset out of range for Intl.DateTimeFormat options property timeZoneName',
+          );
+        }
+        return new Original(locale, options);
+      } as unknown as typeof Intl.DateTimeFormat);
+
+      const out = formatCapturedAt(EPOCH, LA);
+      expect(out).toMatch(/2025-06-15 .*PDT$/);
+      expect(out).not.toContain('(');
+    });
+  });
 });
 
 describe('provenancePdfProperties (CP5/CP6) — one wording for both PDF paths', () => {
@@ -81,6 +109,13 @@ describe('provenancePdfProperties (CP5/CP6) — one wording for both PDF paths',
       subject: 'https://example.com/article?id=7',
       keywords: `Captured ${formatCapturedAt(EPOCH, LA)}`,
     });
+  });
+
+  it('trims the URL like the visible header does (a blank URL yields an empty subject)', () => {
+    expect(provenancePdfProperties(prov({ sourceUrl: '  https://x.test/a  ' })).subject).toBe(
+      'https://x.test/a',
+    );
+    expect(provenancePdfProperties(prov({ sourceUrl: '   ' })).subject).toBe('');
   });
 });
 

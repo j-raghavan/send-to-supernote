@@ -30,12 +30,17 @@ const MAX_VISIBLE_URL = 100;
  */
 export function formatCapturedAt(epochMs: number, timeZone?: string): string {
   const date = new Date(epochMs);
+  // A formatter failure must never fail the whole send. An IANA zone the
+  // runtime rejects falls back to the host zone; anything else (an invalid
+  // instant, a locale-data failure) degrades to the plain Date string.
   try {
     return formatInZone(date, timeZone);
   } catch {
-    // An IANA zone the runtime rejects must never fail the whole send: fall
-    // back to the host zone (which cannot throw) rather than dropping the time.
-    return formatInZone(date, undefined);
+    try {
+      return formatInZone(date, undefined);
+    } catch {
+      return String(date);
+    }
   }
 }
 
@@ -70,10 +75,25 @@ function formatInZone(date: Date, timeZone: string | undefined): string {
   if (/^(GMT|UTC)/i.test(shortName)) {
     return readable;
   }
-  const offset = new Intl.DateTimeFormat('en-US', { ...zone, timeZoneName: 'shortOffset' })
-    .formatToParts(date)
-    .find((part) => part.type === 'timeZoneName')?.value;
+  const offset = utcOffsetLabel(date, zone);
   return offset ? `${readable} (${offset})` : readable;
+}
+
+/**
+ * `GMT-7` style offset for the instant + zone, or '' when the runtime lacks
+ * `timeZoneName: 'shortOffset'` (Chrome < 95) — the header then simply carries
+ * no offset suffix instead of failing the send.
+ */
+function utcOffsetLabel(date: Date, zone: { timeZone?: string }): string {
+  try {
+    return (
+      new Intl.DateTimeFormat('en-US', { ...zone, timeZoneName: 'shortOffset' })
+        .formatToParts(date)
+        .find((part) => part.type === 'timeZoneName')?.value ?? ''
+    );
+  } catch {
+    return '';
+  }
 }
 
 /** ISO-8601 UTC instant (W3C-DTF) for the EPUB `<dc:date>` — always UTC, no zone needed. */
@@ -121,7 +141,8 @@ export function provenanceTextLines(p: Provenance): string[] {
  */
 export function provenancePdfProperties(p: Provenance): { subject: string; keywords: string } {
   return {
-    subject: p.sourceUrl,
+    // Same blank rule as the visible header/banner: trimmed.
+    subject: p.sourceUrl.trim(),
     keywords: `Captured ${formatCapturedAt(p.capturedAtMs, p.timeZone)}`,
   };
 }

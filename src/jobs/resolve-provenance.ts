@@ -3,9 +3,11 @@
  *
  * Decides whether a send is stamped with "where + when" and builds the value the
  * render cores consume. Stamped only for a capture->render send with the opt-in
- * toggle on; never for a pre-rendered `source` pass-through (there is no render
- * seam to inject into — Non-Goal). The instant and zone come from the caller
- * (the saga's injected Clock) so this stays deterministic and port-pure.
+ * toggle on AND a known page URL (an older caller that supplies only a hostname
+ * gets no stamp — `PageContext.url`); never for a pre-rendered `source`
+ * pass-through (there is no render seam to inject into — Non-Goal). The instant
+ * and zone come from the caller (the saga's injected Clock) so this stays
+ * deterministic and port-pure.
  */
 import type { Provenance } from '@domain/conversion';
 
@@ -22,11 +24,11 @@ export function resolveProvenance(
   capturedAtMs: number,
   timeZone: string | undefined,
 ): Provenance | undefined {
-  if (!req.includeProvenance || req.source !== undefined) {
+  if (!req.includeProvenance || req.source !== undefined || req.page.url === undefined) {
     return undefined;
   }
   return {
-    sourceUrl: req.page.url ?? '',
+    sourceUrl: req.page.url.trim(),
     capturedAtMs,
     ...(timeZone !== undefined ? { timeZone } : {}),
   };

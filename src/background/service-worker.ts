@@ -9,7 +9,8 @@
  */
 /* c8 ignore start */
 import { recordedSend } from '@jobs/recorded-send';
-import { resolveSendRequest } from '@jobs/resolve-send-request';
+import type { PageContext } from '@jobs/send-document';
+import { resolveSendRequest, type SendOverrides } from '@jobs/resolve-send-request';
 import { retryPending } from '@jobs/retry-pending';
 import { runHealthCheck } from '@jobs/health-check';
 import { connectPrivateCloud } from '@auth/connect-private-cloud';
@@ -27,7 +28,6 @@ import { privateCloudNetworkErrorHint } from '@domain/private-cloud-url';
 import { normalizeFlags } from '@shared/feature-flags';
 import { StorageKeys } from '@shared/storage-keys';
 import { api } from '@shared/browser-api';
-import type { CaptureMode } from '@domain/capture';
 import { webCryptoSha256Hex } from './crypto';
 import { probePdf } from './pdf-probe';
 import { registerContextMenus, onContextMenuClicked } from './context-menus';
@@ -53,13 +53,13 @@ import {
 } from './composition';
 import { type Diagnosis } from '@jobs/connection-doctor';
 
+/** Click-time overrides a send can carry (popup toggles, context-menu mode). */
+type SendArgs = Pick<SendOverrides, 'mode' | 'includeImages' | 'includeProvenance'>;
+
 async function runSend(
   tabId: number,
-  hostname: string,
-  mode?: CaptureMode,
-  includeImages?: boolean,
-  includeProvenance?: boolean,
-  url?: string,
+  page: PageContext,
+  args: SendArgs,
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = await settingsStore.get();
   const target = settings.target;
@@ -83,16 +83,10 @@ async function runSend(
     // If the page is already a document (PDF in the browser viewer), send the
     // bytes as-is — there is nothing to capture/convert.
     const pdf = await probePdf(tabId, http);
-    const request = resolveSendRequest(
-      settings,
-      { hostname, ...(url !== undefined ? { url } : {}) },
-      {
-        ...(mode !== undefined ? { mode } : {}),
-        ...(pdf ? { format: 'pdf' as const } : {}),
-        ...(includeImages !== undefined ? { includeImages } : {}),
-        ...(includeProvenance !== undefined ? { includeProvenance } : {}),
-      },
-    );
+    const request = resolveSendRequest(settings, page, {
+      ...args,
+      ...(pdf ? { format: 'pdf' as const } : {}),
+    });
     const finalRequest = {
       ...request,
       ...(folderId !== undefined ? { folderId } : {}),
@@ -394,14 +388,10 @@ api.runtime.onStartup.addListener(() => {
 // toolbar click opens the popup (with its Send button) and onClicked never fires.
 
 onContextMenuClicked((mode) => {
-  void sendActiveTab(mode);
+  void sendActiveTab({ mode });
 });
 
-async function sendActiveTab(
-  mode?: CaptureMode,
-  includeImages?: boolean,
-  includeProvenance?: boolean,
-): Promise<{ ok: boolean; error?: string }> {
+async function sendActiveTab(args: SendArgs): Promise<{ ok: boolean; error?: string }> {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     return { ok: false, error: 'No active tab to send.' };
@@ -414,7 +404,11 @@ async function sendActiveTab(
       error: 'This page can’t be captured. Open a normal web page and try again.',
     };
   }
-  return runSend(tab.id, hostnameOf(tab.url), mode, includeImages, includeProvenance, tab.url);
+  return runSend(
+    tab.id,
+    { hostname: hostnameOf(tab.url), ...(tab.url !== undefined ? { url: tab.url } : {}) },
+    args,
+  );
 }
 
 // Startup marker — confirms in the SW console which build is live. Reopening the
@@ -453,12 +447,14 @@ api.runtime.onMessage.addListener(
     };
     if (msg.type === 'send') {
       // The popup sends the click-time "Include images" / "Add source & time"
-      // values; an older popup that omits either leaves it undefined, so
+      // values; an older popup that omits either leaves it out, so
       // resolveSendRequest falls back to the persisted settings.
-      const includeImages = typeof msg.includeImages === 'boolean' ? msg.includeImages : undefined;
-      const includeProvenance =
-        typeof msg.includeProvenance === 'boolean' ? msg.includeProvenance : undefined;
-      void sendActiveTab(undefined, includeImages, includeProvenance).then(sendResponse);
+      void sendActiveTab({
+        ...(typeof msg.includeImages === 'boolean' ? { includeImages: msg.includeImages } : {}),
+        ...(typeof msg.includeProvenance === 'boolean'
+          ? { includeProvenance: msg.includeProvenance }
+          : {}),
+      }).then(sendResponse);
       return true; // keep the channel open so the popup can show the outcome
     }
     if (msg.type === 'reconnected' && msg.target !== undefined) {

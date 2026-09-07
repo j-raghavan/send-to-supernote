@@ -37,10 +37,14 @@ describe('resolveProvenance', () => {
     ).toBeUndefined();
   });
 
-  it('uses an empty source URL when the page URL is unknown (older caller)', () => {
-    expect(resolveProvenance({ includeProvenance: true, page: {} }, NOW, 'UTC')).toMatchObject({
-      sourceUrl: '',
-    });
+  it('does not stamp when the page URL is unknown (older caller supplying only a hostname)', () => {
+    expect(resolveProvenance({ includeProvenance: true, page: {} }, NOW, 'UTC')).toBeUndefined();
+  });
+
+  it('trims the page URL once so every consumer sees the same value', () => {
+    expect(
+      resolveProvenance({ includeProvenance: true, page: { url: '  https://x  ' } }, NOW, 'UTC'),
+    ).toMatchObject({ sourceUrl: 'https://x' });
   });
 
   it('omits timeZone when the clock cannot resolve one', () => {

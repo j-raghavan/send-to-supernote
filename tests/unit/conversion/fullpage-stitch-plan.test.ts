@@ -235,6 +235,20 @@ describe('planFullPage — page slices (FP5)', () => {
     slicesCover(huge.pageSlices, 2000);
   });
 
+  it('counts the inset against the page cap: a capped capture still yields exactly maxPages slices', () => {
+    // a4 width 800 dpr 1: band=1131; cap 3 pages; page far taller than the cap.
+    const cap = { maxPages: 3, maxHeightPx: 1_000_000 };
+    const plan = planFullPage(geom({ totalHeight: 50_000, dpr: 1 }), cap, 100);
+    expect(plan.truncated).toBe(true);
+    expect(plan.pageSlices).toHaveLength(3);
+    expect(plan.pageSlices).toEqual([
+      { sourceY: 0, height: 1031 },
+      { sourceY: 1031, height: 1131 },
+      { sourceY: 2162, height: 1131 },
+    ]);
+    expect(plan.totalDeviceHeight).toBe(3 * 1131 - 100);
+  });
+
   it('treats a negative inset as none', () => {
     expect(planFullPage(geom({ totalHeight: 5000, dpr: 1 }), undefined, -50).pageSlices).toEqual(
       planFullPage(geom({ totalHeight: 5000, dpr: 1 })).pageSlices,

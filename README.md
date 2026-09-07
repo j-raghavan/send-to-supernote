@@ -31,7 +31,7 @@ service).
 The toolbar button sends with your default mode (Reader); the right-click menu
 lets you choose **Reader** or **Full Page** per send.
 
-- **Add source & time** (opt-in, off by default) — a popup toggle that stamps the
+- **Add source & time** (opt-in, off by default): a popup toggle that stamps the
   page's **original URL** and the **capture time** onto the file: a small visible
   header plus file metadata (PDF document properties; EPUB `dc:source`/`dc:date`).
   Handy for tracking where a saved document came from. It is off by default

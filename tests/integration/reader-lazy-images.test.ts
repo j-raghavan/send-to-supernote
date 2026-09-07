@@ -9,7 +9,7 @@
  * remote URL. Readability's `_fixLazyImages` copies such a parked URL back over
  * the inlined `data:` src (for a "lazy" class — or, for a tiny data URI, even
  * without one), and the EPUB step then strips the image. `applyInlinedImages`
- * now drops those `data-*` copies from the tags it rewrites, so Readability has
+ * now drops every such attribute from the tags it rewrites, so Readability has
  * nothing to copy. Runs under happy-dom (DOMParser + Readability need a DOM).
  */
 import { describe, expect, it } from 'vitest';
@@ -37,6 +37,10 @@ describe('parseReader keeps capture-inlined images on lazy-loader pages', () => 
     // data-* stripping alone. Both must end with the data URI as the <img> src.
     ['lazysizes: data-src before src', `class="lazyloaded" data-src="${REMOTE}" src="${REMOTE}"`],
     ['lazysizes: src before data-src', `class="lazyloaded" src="${REMOTE}" data-src="${REMOTE}"`],
+    [
+      'NitroPack: nitro-lazy-src (a non-data- attribute) + class="lazy"',
+      `class="lazy" src="${REMOTE}" nitro-lazy-src="${REMOTE}"`,
+    ],
     [
       'WordPress: data-lazy-src + data-lazy-srcset before src',
       `class="wp-image-1 lazyloaded" data-lazy-src="${REMOTE}" data-lazy-srcset="${REMOTE}?w=300 300w" src="${REMOTE}"`,

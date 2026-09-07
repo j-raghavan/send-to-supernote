@@ -58,7 +58,7 @@ describe('applyInlinedImages', () => {
     expect(out).not.toContain('srcset');
   });
 
-  it('rewrites the REAL src (not data-src) and strips the lazy-loader data-* attributes', () => {
+  it('rewrites the REAL src (not data-src) and drops the lazy-loader data-* attributes', () => {
     // lazysizes authoring order: data-src BEFORE src. `\bsrc` would match the
     // tail of `data-src` and put the data URI in the wrong attribute.
     const html =
@@ -72,15 +72,22 @@ describe('applyInlinedImages', () => {
     expect(out).toBe(`<img class="lazyloaded" src="${PNG}" alt="p">`);
   });
 
-  it('strips data-srcset / data-lazy-srcset along with the real srcset on a rewritten tag', () => {
+  it('keeps only src/alt/class/width/height/style on a rewritten tag (order preserved)', () => {
     const html =
-      '<img data-lazy-srcset="https://x/a.png 300w" src="https://x/a.png" srcset="https://x/a.png 300w" data-srcset="https://x/a.png 2x" width="10">';
+      '<img id="hero" data-lazy-srcset="https://x/a.png 300w" src="https://x/a.png" srcset="https://x/a.png 300w" sizes="100vw" width="10" height=5 style="max-width:100%" loading="lazy" nitro-lazy-src="https://x/a.png" title="a.png" alt="p">';
     const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
 
     const out = applyInlinedImages(html, images);
 
-    // (The stripped srcset leaves a double space; the HTML parser ignores it.)
-    expect(out).toBe(`<img src="${PNG}"  width="10">`);
+    expect(out).toBe(`<img src="${PNG}" width="10" height=5 style="max-width:100%" alt="p">`);
+  });
+
+  it('drops a non-data- lazy-loader attribute (e.g. NitroPack nitro-lazy-src) and a filename title', () => {
+    const html =
+      '<img class="lazy" src="https://x/a.png" nitro-lazy-src="https://x/a.png" title="hero.jpg">';
+    const images: CapturedImage[] = [{ src: 'https://x/a.png', dataUri: PNG }];
+
+    expect(applyInlinedImages(html, images)).toBe(`<img class="lazy" src="${PNG}">`);
   });
 
   it('leaves data-* attributes on an <img> it did NOT rewrite (e.g. an un-captured LQIP placeholder)', () => {

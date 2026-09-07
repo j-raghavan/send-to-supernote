@@ -13,15 +13,16 @@
  * test env, and scripting-extractor.ts is c8-ignored — so ALL the inlining
  * logic that CAN be tested lives here. Idempotent and never throws.
  *
- * Lazy-loader note: a rewritten tag also loses its `srcset` AND every `data-*`
- * attribute. The data URI is the single authoritative source, and the parked
- * copies of the remote URL (`data-src`, `data-lazy-src`, `data-srcset`, …) are
- * exactly what Readability's `_fixLazyImages` copies back over `src` for any
- * "lazy"-classed <img> (and, for a tiny data URI, even without the class) —
- * which un-inlined the image so the EPUB step then had to drop it. With nothing
- * left to copy, Readability keeps the data URI; `class` is left alone so its
- * unlikely-candidate filtering still applies. Images the capture did NOT inline
- * (a page-authored LQIP placeholder, a remote src) are untouched.
+ * Rewritten-tag note: a rewritten tag keeps ONLY `src` (now the data URI),
+ * `alt`, `class`, `width`, `height`, and `style`. Everything else is dropped —
+ * `srcset`/`sizes`, and every lazy-loader/CMS attribute that parks a copy of the
+ * remote URL (`data-src`, `data-lazy-src`, `nitro-lazy-src`, a `title` that is a
+ * filename, …). Readability's `_fixLazyImages` copies ANY such attribute back
+ * over `src` for a "lazy"-classed <img> (and, for a tiny data URI, even without
+ * the class), which un-inlined the image so the EPUB step then had to drop it.
+ * With nothing left to copy, Readability keeps the data URI; `class` stays so
+ * its unlikely-candidate filtering still applies. Images the capture did NOT
+ * inline (a page-authored LQIP placeholder, a remote src) are untouched.
  *
  * Match-key note: the captured images are keyed on `img.getAttribute('src')`,
  * which is the DECODED attribute value, but the `src=` text in the captured
@@ -39,21 +40,17 @@ export interface CapturedImage {
 }
 
 // Matches a whole <img ...> tag, skipping over quoted attribute values so a `>`
-// inside an attribute (e.g. alt="a>b") does not truncate the match. src/srcset
-// operate tag-scoped on the match.
-//
-// The attribute names must be the REAL `src` / `srcset`, not the tail of a
-// lazy-loader's `data-src` / `data-lazy-srcset`: a plain `\b` sits happily
-// between the `-` and the `s`, so on a lazysizes page (`data-src` listed before
-// `src`) the data URI would land in `data-src`, `src` would stay remote, and
-// the EPUB step would drop the image. The lookbehind rejects a preceding word
-// char or hyphen.
+// inside an attribute (e.g. alt="a>b") does not truncate the match. The
+// attribute matchers operate tag-scoped on the match.
 const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+// The REAL `src` — not the tail of a lazy-loader's `data-src`: a plain `\b`
+// sits happily between the `-` and the `s`, so the lookbehind also rejects a
+// preceding hyphen (or word char).
 const SRC_ATTR = /(?<![\w-])src\s*=\s*("([^"]*)"|'([^']*)')/i;
-const SRCSET_ATTR = /(?<![\w-])srcset\s*=\s*("[^"]*"|'[^']*')/i;
-// Every `data-*` attribute (a serializer always quotes values), incl. the
-// leading whitespace so removal leaves no gap. Global: a tag can carry many.
-const DATA_ATTRS = /\sdata-[^\s=>]+\s*=\s*("[^"]*"|'[^']*')/gi;
+// One attribute: name, then an optional quoted/unquoted value.
+const ATTR = /\s([^\s=>"'/]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g;
+// Attributes a rewritten <img> keeps besides `src` (see the note above).
+const KEPT_ATTRS = new Set(['alt', 'class', 'width', 'height', 'style']);
 
 // Decode the HTML entities a serializer emits in attribute values, in ONE pass
 // (so `&amp;lt;` decodes to `&lt;`, not `<`). Named set + numeric dec/hex.
@@ -73,6 +70,24 @@ function decodeEntities(value: string): string {
   });
 }
 
+/**
+ * Rebuild an `<img>` tag around the data URI: `src` is replaced in place (order
+ * preserved) and only the KEPT_ATTRS survive alongside it.
+ */
+function rewriteTag(tag: string, dataUri: string): string {
+  const attrs: string[] = [];
+  for (const match of tag.slice('<img'.length, -1).matchAll(ATTR)) {
+    const [, name, value] = match;
+    const lower = name!.toLowerCase();
+    if (lower === 'src') {
+      attrs.push(`src="${dataUri}"`);
+    } else if (KEPT_ATTRS.has(lower)) {
+      attrs.push(value === undefined ? name! : `${name}=${value}`);
+    }
+  }
+  return `<img ${attrs.join(' ')}>`;
+}
+
 function extractSrc(tag: string): string | undefined {
   const match = SRC_ATTR.exec(tag);
   if (!match) {
@@ -83,9 +98,9 @@ function extractSrc(tag: string): string | undefined {
 
 /**
  * Inline page-captured images into the HTML. Each `<img>` whose raw `src`
- * matches a captured image has its `src` rewritten to the data URI and its
- * `srcset` + `data-*` attributes stripped (the data URI is the single
- * authoritative source — see the lazy-loader note above). Tags
+ * matches a captured image has its `src` rewritten to the data URI and every
+ * attribute outside the kept set dropped (the data URI is the single
+ * authoritative source — see the rewritten-tag note above). Tags
  * without a `src`, or whose `src` was not captured (already `data:`,
  * cross-origin-tainted, over caps), are left untouched. Empty `images`
  * leaves the HTML unchanged. Idempotent and never throws.
@@ -114,11 +129,8 @@ export function applyInlinedImages(html: string, images: readonly CapturedImage[
     if (image === undefined) {
       return tag;
     }
-    // Tag-scoped: replace only this tag's src, strip its srcset and data-*.
-    // A replacer function keeps a `$` in the data URI from being a substitution.
-    return tag
-      .replace(SRC_ATTR, () => `src="${image.dataUri}"`)
-      .replace(SRCSET_ATTR, '')
-      .replace(DATA_ATTRS, '');
+    // Tag-scoped rebuild (no string substitution, so a `$` in the data URI is
+    // never treated as a replacement pattern).
+    return rewriteTag(tag, image.dataUri);
   });
 }
